@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+chrome-profile-copy/
+archive/
+shots/
+site_preview*.png
+full_selenium_walkthrough_report.json
+selenium_audit_report.json
