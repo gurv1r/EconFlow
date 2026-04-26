@@ -1,288 +1,236 @@
-# Agents Descriptor
+# Agent Guide
 
-This file is for coding agents working on the UpLearn Economics Study Dashboard. Read it before editing the app so you understand the data flow, local-only archive assumptions, and safe ways to test changes.
+This document is the working guide for coding agents on the UpLearn Economics Study Dashboard repository.
 
-## Project Purpose
+## What This Repo Is
 
-This repository contains a static study dashboard built from an exported UpLearn Economics archive. The dashboard is meant to make the exported course easier to search, revise, and study locally.
+This repository contains a static revision dashboard built around a local export of the UpLearn Economics course archive.
 
-The tracked app is the dashboard and its generated catalog. The raw exported archive is intentionally local-only and ignored by Git.
+The tracked source of truth in Git is:
 
-## Current Repository Shape
+- the dashboard app in `site/`
+- the catalog builder and export tooling
+- the generated `site/catalog.json`
+- deployment and backend config
 
-- `site/index.html`: static HTML shell and templates for the dashboard.
-- `site/styles.css`: all visual styling for the dashboard.
-- `site/app.js`: all client-side app logic, including local-vs-hosted archive URL resolution and cloud auth/progress sync.
-- `site/catalog.json`: generated catalog consumed by `site/app.js`.
-- `site/firebase-config.js`: browser-side Firebase config toggle and placeholders for the auth/sync layer.
-- `serve_uplearn_site.py`: local HTTP server for the project root. It supports byte range requests, which matters for local video playback.
-- `launch_uplearn_site.ps1`: Windows convenience launcher. It starts the local server if needed and opens `http://127.0.0.1:8000/site/`.
-- `build_uplearn_site.py`: builds `site/catalog.json` from the local `archive/UpLearn Economics` export.
-- `uplearn_econ_export.py`: exports course data and media from UpLearn into `archive/UpLearn Economics`.
-- `selenium_audit.py`: shorter Selenium smoke/audit script.
-- `full_selenium_walkthrough.py`: broader Selenium walkthrough that exercises search, study mode, quizzes, videos, notes, paper mode, flashcards, export/import, and reset.
-- `.github/workflows/deploy-pages.yml`: deploys the `site/` folder to GitHub Pages.
-- `.gitattributes`: normalizes line endings.
-- `.gitignore`: excludes the raw archive and generated scratch/test artifacts.
+The full exported course archive is local-only by default and is intentionally excluded from Git.
 
-## Local-Only Files
+## Current Shape
 
-These paths are expected locally but should not be committed without a deliberate decision:
+Core app files:
+
+- `site/index.html`: static shell, templates, dialogs, and cache-busted script/style references
+- `site/styles.css`: all dashboard styling
+- `site/app.js`: app state, rendering, archive path resolution, quiz flow, flashcards, notes, paper mode, and Firebase sync
+- `site/catalog.json`: generated catalog consumed by `site/app.js`
+- `site/firebase-config.js`: optional Firebase config toggle and placeholders
+
+Data and tooling:
+
+- `build_uplearn_site.py`: rebuilds `site/catalog.json` from the local archive
+- `uplearn_econ_export.py`: exports course data and media from the UpLearn GraphQL API into `archive/UpLearn Economics`
+- `serve_uplearn_site.py`: local HTTP server for the repo root with byte-range support
+- `launch_uplearn_site.ps1`: Windows launcher for the local site
+
+Verification helpers:
+
+- `selenium_audit.py`
+- `full_selenium_walkthrough.py`
+
+Infra and backend config:
+
+- `.github/workflows/deploy-pages.yml`: GitHub Pages deploy
+- `firestore.rules`: Firestore rules for user-scoped sync
+- `gcs-cors.json`: CORS policy for the hosted archive bucket
+
+## Local Files You Should Expect
+
+These are normal locally and should not be committed unless the user explicitly asks:
 
 - `archive/`
 - `chrome-profile-copy/`
 - `shots/`
 - `__pycache__/`
-- `selenium_audit_report.json`
-- `full_selenium_walkthrough_report.json`
-- `site_preview*.png`
+- generated Selenium reports
+- generated preview screenshots
 
-The hosted GitHub Pages version can load the dashboard and `site/catalog.json`. Archive-backed resources can also be served from Google Cloud Storage in hosted mode, while local development still expects the ignored `archive/` folder to exist beside `site/` in the local project root.
+At the moment this repo may use a local junction:
+
+- `archive -> C:\Users\Gurvir\Documents\2026-04-23-i-have-chrome-open-with-my-2\archive`
+
+Treat that as local environment setup, not repository content.
 
 ## Data Flow
 
-1. `uplearn_econ_export.py` talks to the UpLearn GraphQL API and writes the full local archive under `archive/UpLearn Economics`.
-2. `build_uplearn_site.py` reads the local archive and writes a compact generated catalog to `site/catalog.json`.
-3. `site/index.html`, `site/styles.css`, and `site/app.js` render the study dashboard in the browser.
-4. `site/app.js` fetches `./catalog.json` at boot.
-5. Archive-backed resources are resolved by `archiveUrl(path)`.
-6. `archiveUrl(path)` uses the local `../archive/` path on `127.0.0.1` and `localhost`, and uses the Google Cloud Storage base URL in hosted mode.
-7. User progress always lives in browser `localStorage` under `uplearn-econ-progress-v3`.
-8. If Firebase is configured, the same progress payload can also sync to Firestore after a user signs in.
+The repo has a simple pipeline:
 
-## Catalog Snapshot
+1. `uplearn_econ_export.py` reads the UpLearn API and writes the raw export to `archive/UpLearn Economics`.
+2. `build_uplearn_site.py` reads that archive and produces `site/catalog.json`.
+3. `site/app.js` loads `./catalog.json` at boot and renders the dashboard.
+4. Raw lesson HTML, videos, quizzes, and papers are opened through `archiveUrl(path)`.
+5. Local progress is stored in browser `localStorage` under `uplearn-econ-progress-v3`.
+6. If Firebase is configured, that same progress object can sync to Firestore.
 
-At the time this descriptor was written, `site/catalog.json` contained:
+## Archive Path Rules
 
-- 4 modules
-- 132 topics
-- 1,015 videos
-- 452 quizzes
-- 1,766 quiz questions
-- 558 definitions
-- 32 exam papers
-- 202 exam questions
+Archive-backed resources are resolved differently depending on origin:
 
-If the archive is regenerated, rebuild `site/catalog.json` and update this snapshot if useful.
+- local mode on `127.0.0.1` or `localhost` uses `../archive/`
+- hosted mode uses `https://storage.googleapis.com/uplearn-economics-study-dashboard-assets-260426/`
 
-## Running Locally
+Catalog paths remain stable in both modes:
 
-From the project root:
+- `archive/UpLearn Economics/...`
 
-```powershell
-python serve_uplearn_site.py
-```
+That means the same `site/catalog.json` works locally and on GitHub Pages.
 
-Then open:
+## Video Ordering Rule
 
-```text
-http://127.0.0.1:8000/site/
-```
+Video ordering is important in this repo.
 
-On Windows:
+The correct ordering is not alphabetical by folder name. It must follow the UpLearn API lesson order from each subsection's `videoLessons` and `examHowToLessons` arrays.
 
-```powershell
-.\launch_uplearn_site.ps1
-```
+Current behavior:
 
-The server binds to `127.0.0.1` and uses `UPLEARN_SITE_PORT` if set, otherwise port `8000`.
+- `build_uplearn_site.py` reconstructs course order from each module's `module.json`
+- local `lesson.json` files are normalized with `displayOrder` and `displayTitle`
+- generated catalog entries expose `displayOrder` and `displayTitle`
+- UI labels now use the API-verified format `Video N - Title`
 
-## Rebuilding Data
+If you touch video ordering again:
 
-To rebuild only the dashboard catalog from an existing local archive:
-
-```powershell
-python build_uplearn_site.py
-```
-
-This expects:
-
-```text
-archive/UpLearn Economics/summary.json
-archive/UpLearn Economics/Year 12/...
-archive/UpLearn Economics/Year 13/...
-```
-
-To re-export from UpLearn:
-
-```powershell
-$env:UPLEARN_TOKEN = "<token>"
-python uplearn_econ_export.py
-python build_uplearn_site.py
-```
-
-Do not paste real tokens into docs, commits, issues, logs, or PR descriptions. `uplearn_econ_export.py` currently contains a fallback token constant; prefer `UPLEARN_TOKEN` and treat auth material as sensitive.
-
-## Frontend Architecture
-
-The frontend is intentionally framework-free:
-
-- `boot()` loads `catalog.json`, seeds flashcards, binds events, renders stats, and applies filters.
-- Global `state` holds the catalog, filtered modules, progress, quiz session, flashcard session, current study session, and timer handle.
-- Filtering flows through `applyFilters()`, `buildModuleHaystack()`, `renderModules()`, and topic/module render helpers.
-- Progress flows through `loadProgress()`, `normalizeProgress()`, `saveProgress()`, and localStorage.
-- Smart review flows through `renderSmartDashboard()`, `buildTodayPlan()`, flashcard helpers, weak-topic helpers, and recommendation helpers.
-- Study mode flows through `openTopicStudy()`, `openVideoStudy()`, `openQuizStudyNotes()`, `openStudyHtml()`, `openExamPaperStudy()`, and `setStudySession()`.
-- Quiz practice flows through `openQuiz()`, `normalizeQuestion()`, `renderQuiz()`, question renderers, `gradeQuestion()`, and `finishQuiz()`.
-- Paper mode flows through paper state helpers, timer helpers, mark inputs, and sidebar rendering.
-
-Important DOM IDs are declared near the top of `site/app.js`. When changing `site/index.html`, keep those IDs in sync with `site/app.js`.
+- do not sort lessons alphabetically
+- do not trust folder order alone
+- verify against the API or module export data
 
 ## Progress Model
 
-Progress is stored in localStorage and can be exported/imported from the UI. The shape includes:
+The app is local-first.
 
-- topic state: summaries, videos, quizzes, notes, covered flags, last touched timestamps
+The progress object includes:
+
+- topic check state
+- topic touches
 - quiz scores and attempts
 - flashcard schedule and ratings
-- paper timing, completion, and marks
-- preferences such as study stage and filtering behavior
-- last opened study session
+- notes and note index
+- exam paper checklist, marks, and timer data
+- study preferences
+- last opened study resource
 
-When changing this model, update `normalizeProgress()` so older saved progress continues to work.
+If you change the shape:
 
-If cloud sync is enabled, keep Firestore payload compatibility in mind too. The app currently stores the whole progress object in one user-scoped document and compares `updatedAt` timestamps to decide whether to pull or push.
+- update `createEmptyProgress()`
+- update `normalizeProgress()`
+- keep old saved progress readable
 
-## Styling Notes
+## Firebase Sync
 
-The app uses a dark dashboard style with green/blue accents:
+Cloud sync is optional.
 
-- CSS variables live at the top of `site/styles.css`.
-- Layout is a two-column shell with sticky sidebar and main dashboard/study content.
-- Dialogs are native `<dialog>` elements.
-- Course/topic content uses cards, details/summary sections, pills, and progress widgets.
-- Responsive behavior is entirely CSS-driven.
+Current model:
 
-Keep new UI consistent with the existing dashboard language unless intentionally redesigning the whole app.
+- auth mode: Email/Password
+- Firestore path: `users/{uid}/progress/default`
+- the app writes locally first
+- sync compares `updatedAt` timestamps
 
-## Deployment
+If Firebase is not configured, the dashboard still works fully in local-only mode.
 
-The GitHub Pages workflow publishes only the `site/` directory. The hosted app therefore depends on the external Google Cloud Storage bucket for archive-backed videos, JSON, HTML, and raw assets.
+## GCS Hosted Archive
 
-Before changing Pages behavior or bucket permissions, decide whether the raw archive should remain private/local. Publishing exported course materials should be treated as a deliberate privacy/copyright decision.
-
-If you enable Firebase auth for the hosted app, the browser-side config in `site/firebase-config.js` must be filled before deploy. The placeholder file is safe to publish but keeps cloud auth disabled.
-
-## Testing
-
-Basic local smoke test:
-
-```powershell
-python serve_uplearn_site.py
-```
-
-Then visit `http://127.0.0.1:8000/site/` and check that modules render.
-
-Automated audits require Selenium and Chrome/Chromedriver support:
-
-```powershell
-python selenium_audit.py
-python full_selenium_walkthrough.py
-```
-
-Generated outputs are ignored by Git:
-
-- `selenium_audit_report.json`
-- `full_selenium_walkthrough_report.json`
-- `shots/`
-
-Useful manual checks after frontend changes:
-
-- Dashboard loads without console errors.
-- Search filters modules/topics.
-- Module details expand.
-- Topic study opens and notes save.
-- Quiz dialog opens and can answer/navigate questions.
-- Flashcard session opens, reveals, and rates cards.
-- Paper mode opens, timer works, marks update score.
-- Export/import progress works.
-- Local raw archive/video links work when `archive/` exists.
-
-## Git And Branch State
-
-Primary branch is `main`.
-
-`master` previously held the site work and was merged into `main` with unrelated histories. If `origin/master` still exists, delete it only with explicit user confirmation because that is a GitHub-side branch deletion.
-
-## Safety And Privacy Notes
-
-- Do not commit `archive/` unless the user explicitly asks and understands the implications.
-- Do not expose UpLearn auth tokens, cookies, account data, or private course exports.
-- Do not loosen Firestore rules beyond user-owned progress documents without explicit user approval.
-- Do not run `uplearn_econ_export.py` against the live UpLearn API unless the user asks for a fresh export and has authorized token use.
-- Do not overwrite local progress in the browser unless the user asks; reset progress is user-facing and destructive.
-- Avoid destructive Git commands such as hard resets or branch deletion without explicit approval.
-
-## Common Change Recipes
-
-Add a new dashboard widget:
-
-1. Add markup or a template in `site/index.html`.
-2. Add styles in `site/styles.css`.
-3. Add state/render logic in `site/app.js`.
-4. Reuse existing progress/catalog helpers where possible.
-5. Smoke test locally.
-
-Change catalog shape:
-
-1. Update `build_uplearn_site.py`.
-2. Rebuild `site/catalog.json`.
-3. Update `site/app.js` consumers.
-4. Keep old/optional fields tolerated where possible.
-
-Change progress shape:
-
-1. Update `createEmptyProgress()`.
-2. Update `normalizeProgress()` for backwards compatibility.
-3. Update export/import expectations if needed.
-4. Test with existing localStorage and a fresh profile if practical.
-
-Change raw archive rendering:
-
-1. Check how `archiveUrl(path)` resolves paths.
-2. Confirm the target file exists under local `archive/` and, when relevant, under the configured Google Cloud Storage bucket.
-3. Keep the local/hosted split in mind: localhost uses local files, GitHub Pages uses GCS.
-
-## GCS Archive Backend
-
-Hosted archive assets are stored in:
+Hosted raw assets are served from:
 
 - project: `uplearn-econ-dash-260426`
 - bucket: `gs://uplearn-economics-study-dashboard-assets-260426`
 - region: `europe-west2`
 - public base URL: `https://storage.googleapis.com/uplearn-economics-study-dashboard-assets-260426/`
 
-The upload preserves the `archive/...` prefix exactly so existing catalog paths keep working without regeneration.
+Useful commands:
 
-Recommended upload command from the repo root:
+```powershell
+python build_uplearn_site.py
+```
 
 ```powershell
 & 'C:\Program Files (x86)\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd' storage rsync archive gs://uplearn-economics-study-dashboard-assets-260426/archive --recursive
 ```
 
-Current CORS policy should allow:
+```powershell
+& 'C:\Program Files (x86)\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd' storage buckets update gs://uplearn-economics-study-dashboard-assets-260426 --cors-file=gcs-cors.json
+```
 
-- origins: `https://gurv1r.github.io`, `http://127.0.0.1:8000`, `http://localhost:8000`
-- methods: `GET`, `HEAD`, `OPTIONS`
-- response headers: `Content-Type`, `Content-Length`, `Accept-Ranges`, `Content-Range`, `ETag`
+## How To Run Locally
 
-Do not make the bucket public without explicit user confirmation because the archive contains exported course materials.
+Serve the repo root, not the `site/` folder directly:
 
-## Firebase Auth Backend
+```powershell
+python serve_uplearn_site.py
+```
 
-The static Pages app now has an optional Firebase-backed login and progress sync layer.
+Open:
 
-- config file: `site/firebase-config.js`
-- rules file: `firestore.rules`
-- auth mode: Email/Password
-- data shape: one Firestore document per user at `users/{uid}/progress/default`
+```text
+http://127.0.0.1:8000/site/
+```
 
-The dashboard remains local-first even when cloud sync is enabled. Local progress writes happen immediately, then the app pushes the newer payload to Firestore after sign-in.
+Why this matters:
 
-## Known Limitations
+- `site/` needs access to `../archive/...`
+- local video playback depends on range requests
+- opening `site/index.html` directly will not behave like the real app
 
-- The app is a single large vanilla JS file, so related behavior may be separated by helper order rather than modules.
-- Hosted Pages does not include raw archive content directly; it relies on the external Google Cloud Storage bucket.
-- The catalog is generated and can become stale if the raw archive changes.
-- Browser progress is per-origin localStorage; changing host/port/domain changes where progress is stored.
-- Selenium scripts assume the site is served at `http://127.0.0.1:8000/site/`.
+## Safe Change Workflow
+
+For most feature or data changes:
+
+1. update source code
+2. rebuild `site/catalog.json` if builder logic or archive parsing changed
+3. test locally through `http://127.0.0.1:8000/site/`
+4. if hosted behavior depends on archive assets, decide whether GCS also needs an update
+5. bump cache-busting query params in `site/index.html` when frontend bundles changed and you need Pages users to get the new JS/CSS quickly
+
+## Good Verification Targets
+
+Manual checks that usually matter:
+
+- module list loads
+- module accordions expand
+- section-topic completion toggles work and persist
+- study workspace opens the expected first resource
+- video rail labels and order are correct
+- quiz dialog opens and records answers
+- flashcard review advances and saves
+- notes save
+- paper mode timer and marks work
+- export/import progress works
+
+Useful automation:
+
+```powershell
+python selenium_audit.py
+```
+
+```powershell
+python full_selenium_walkthrough.py
+```
+
+## Things To Avoid
+
+- Do not commit the raw `archive/` unless the user clearly asks.
+- Do not expose UpLearn tokens, cookies, or user account data.
+- Do not run a fresh live export unless the user wants it.
+- Do not assume alphabetical file order matches course order.
+- Do not break hosted archive paths unless you also intentionally migrate GCS content.
+- Do not use destructive Git commands without explicit approval.
+
+## Repo Facts Worth Knowing
+
+At the time of this guide:
+
+- primary branch: `main`
+- generated catalog includes 4 modules
+- generated catalog includes 1,015 videos
+- visible topic video ordering has been API-checked and matched for 125 topics with videos
+
+If those counts change after a re-export or rebuild, that may be expected. Treat the current code and generated catalog as more important than these snapshot numbers.
