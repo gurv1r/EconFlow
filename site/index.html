@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>UpLearn Economics Study Dashboard</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2314213d'/%3E%3Cpath d='M17 18h30v6H17zm0 11h30v6H17zm0 11h20v6H17z' fill='%23fca311'/%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Source+Serif+4:opsz,wght@8..60,500;8..60,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./styles.css?v=2" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="app-header-inner">
+      <a class="app-brand" href="./">
+        <span class="app-brand-mark">Up</span>
+        <span class="app-brand-word">LEARN</span>
+      </a>
+      <nav class="app-nav" aria-label="Primary">
+        <a class="app-nav-link is-active" href="#resultTitle">Courses</a>
+        <a class="app-nav-link" href="#todayTitle">Today</a>
+        <a class="app-nav-link" href="#studyTitle">Study</a>
+      </nav>
+      <div class="app-actions" aria-hidden="true">
+        <span class="app-icon">?</span>
+        <span class="app-icon">U</span>
+      </div>
+    </div>
+  </header>
+
+  <div class="page-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <p class="eyebrow">Local Course Dashboard</p>
+        <h1>UpLearn Economics</h1>
+        <p class="lede">Your exported Year 12 and Year 13 archive, remapped into a cleaner study dashboard.</p>
+      </div>
+
+      <div class="search-panel">
+        <label class="field">
+          <span>Search</span>
+          <input id="searchInput" type="search" placeholder="Topics, quizzes, videos, papers..." />
+        </label>
+
+        <label class="field">
+          <span>Year</span>
+          <select id="yearFilter">
+            <option value="">All years</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span>Module</span>
+          <select id="moduleFilter">
+            <option value="">All modules</option>
+          </select>
+        </label>
+      </div>
+
+      <section class="tracking-panel">
+        <p class="eyebrow">Study Rules</p>
+        <h3>Teaching order</h3>
+        <p class="lede">Recommendations follow the real Edexcel sequence by default.</p>
+        <div class="search-panel">
+          <label class="field">
+            <span>Course stage</span>
+            <select id="studyStageSelect">
+              <option value="as">AS: Themes 1 and 2</option>
+              <option value="alevel">A Level: Themes 1 to 4</option>
+            </select>
+          </label>
+          <label class="check-chip">
+            <input id="coveredOnlyToggle" type="checkbox" checked />
+            <span>Only review topics already covered</span>
+          </label>
+          <label class="check-chip">
+            <input id="allowFutureToggle" type="checkbox" />
+            <span>Allow future-topic suggestions</span>
+          </label>
+        </div>
+      </section>
+
+      <div class="stats-grid" id="statsGrid"></div>
+
+      <section class="tracking-panel">
+        <p class="eyebrow">Progress Vault</p>
+        <h3>Stored on this device</h3>
+        <p class="lede">Checks, quiz attempts, and completion state persist locally so you can keep revising.</p>
+        <div class="tracking-actions">
+          <button class="button button-ghost" id="exportProgressBtn" type="button">Export progress</button>
+          <label class="button button-ghost import-button">
+            Import progress
+            <input id="importProgressInput" type="file" accept="application/json" hidden />
+          </label>
+          <button class="button button-ghost danger-button" id="resetProgressBtn" type="button">Reset progress</button>
+        </div>
+      </section>
+    </aside>
+
+    <main class="main">
+      <section class="hero">
+        <div>
+          <p class="eyebrow">Browse Library</p>
+          <h2>Open a module, jump into a topic, and get to the exact resource quickly.</h2>
+          <p class="hero-copy">
+            Use the filters on the left, then browse clean module sections with direct topic, video, quiz, flashcard, and paper access.
+          </p>
+        </div>
+        <div class="hero-actions">
+          <a class="button" href="#moduleList">Browse modules</a>
+          <button class="button button-ghost" id="resumeStudyBtn" type="button" hidden disabled>Resume last study</button>
+          <a class="button" href="../archive/UpLearn%20Economics/README.md" target="_blank" rel="noreferrer">Open Archive README</a>
+          <a class="button button-ghost" href="./catalog.json" target="_blank" rel="noreferrer">Open Catalog JSON</a>
+        </div>
+      </section>
+
+      <section class="results-header">
+        <div>
+          <p class="eyebrow">Modules</p>
+          <h3 id="resultTitle">Loading archive...</h3>
+        </div>
+        <p id="resultMeta" class="result-meta"></p>
+      </section>
+
+      <section id="moduleList" class="module-list"></section>
+
+      <details class="dashboard-details">
+        <summary>Open revision dashboard</summary>
+
+      <section class="results-header progress-header">
+        <div>
+          <p class="eyebrow">Revision Tracking</p>
+          <h3 id="progressTitle">Preparing progress summary...</h3>
+        </div>
+        <p id="progressMeta" class="result-meta"></p>
+      </section>
+
+      <section class="planner-grid">
+        <article class="planner-card">
+          <p class="eyebrow">Due Now</p>
+          <h3 id="dueTitle">Loading spaced review...</h3>
+          <p id="dueMeta" class="result-meta"></p>
+          <div class="hero-actions">
+            <button class="button" id="startDueReviewBtn" type="button">Start due flashcards</button>
+            <button class="button button-ghost" id="startMixedReviewBtn" type="button">Start mixed review</button>
+          </div>
+        </article>
+        <article class="planner-card">
+          <p class="eyebrow">Smart Focus</p>
+          <h3 id="focusTitle">Finding weak spots...</h3>
+          <p id="focusMeta" class="result-meta"></p>
+          <div class="hero-actions">
+            <button class="button button-ghost" id="focusWeakTopicsBtn" type="button">Open weak topics</button>
+          </div>
+        </article>
+      </section>
+
+      <section class="planner-grid planner-grid-tight">
+        <article class="planner-card">
+          <p class="eyebrow">Due Queue</p>
+          <div id="dueList" class="card-list"></div>
+        </article>
+        <article class="planner-card">
+          <p class="eyebrow">Weak Topics</p>
+          <div id="weakTopicList" class="card-list"></div>
+        </article>
+      </section>
+
+      <section class="planner-card today-card">
+        <div class="today-head">
+          <div>
+            <p class="eyebrow">Today</p>
+            <h3 id="todayTitle">Building your study order...</h3>
+            <p id="todayMeta" class="result-meta"></p>
+          </div>
+          <div class="hero-actions">
+            <button class="button" id="startTodayPlanBtn" type="button">Start today's plan</button>
+          </div>
+        </div>
+        <div id="todayPlanList" class="card-list"></div>
+      </section>
+
+      <section class="planner-card today-card">
+        <div class="today-head">
+          <div>
+            <p class="eyebrow">Specification Map</p>
+            <h3 id="specMapTitle">Loading Edexcel theme map...</h3>
+            <p id="specMapMeta" class="result-meta"></p>
+          </div>
+        </div>
+        <div id="specMapList" class="card-list"></div>
+      </section>
+
+      </details>
+
+      <section class="study-layout">
+        <article class="study-panel">
+          <div class="study-head">
+            <div>
+              <p class="eyebrow">Study Workspace</p>
+              <h3 id="studyTitle">Choose a topic, quiz, video, or paper</h3>
+              <p id="studyMeta" class="result-meta">This is where you should spend most of your revision time.</p>
+            </div>
+            <div class="hero-actions" id="studyActions"></div>
+          </div>
+          <div id="studyContent" class="study-content">
+            <div class="empty-state">Open a Today step, a topic study action, a quiz, or an exam paper to load it here.</div>
+          </div>
+        </article>
+        <aside class="study-sidebar">
+          <article class="planner-card">
+            <p class="eyebrow">Resource Notes</p>
+            <h3 id="notesTitle">No resource selected</h3>
+            <p id="notesMeta" class="result-meta">Notes save automatically and count toward your revision tracking.</p>
+            <div class="hero-actions">
+              <button class="button button-ghost" id="insertNotePromptBtn" type="button">Insert note scaffold</button>
+            </div>
+            <textarea id="studyNotes" class="study-notes" rows="16" placeholder="Write condensed notes, mistakes, and memory cues here..."></textarea>
+            <div class="study-sidebar-meta">
+              <span id="notesSavedState" class="metric">Not saved yet</span>
+              <span id="notesCount" class="metric">0 chars</span>
+            </div>
+          </article>
+          <article class="planner-card">
+            <p class="eyebrow">Spec Focus</p>
+            <h3 id="specTitle">No resource selected</h3>
+            <p id="specMeta" class="result-meta">Open a topic, video, quiz, or paper to see the theme focus and exam guidance.</p>
+            <div id="specTags" class="chip-list"></div>
+            <div id="specChecklist" class="card-list"></div>
+            <p id="notePrompt" class="result-meta"></p>
+          </article>
+          <article class="planner-card" id="paperTrackerCard">
+            <p class="eyebrow">Paper Tracker</p>
+            <h3 id="paperTitle">No paper open</h3>
+            <p id="paperMeta" class="result-meta">Open an exam paper in study mode to time it and self-mark it.</p>
+            <div class="hero-actions">
+              <button class="button button-ghost" id="startPaperTimerBtn" type="button">Start timer</button>
+              <button class="button button-ghost" id="pausePaperTimerBtn" type="button">Pause</button>
+              <button class="button button-ghost" id="resetPaperTimerBtn" type="button">Reset</button>
+            </div>
+            <div class="study-sidebar-meta">
+              <span id="paperTimerDisplay" class="metric">00:00:00</span>
+              <span id="paperScoreDisplay" class="metric">No score yet</span>
+            </div>
+            <div id="paperChecklist" class="card-list"></div>
+          </article>
+          <article class="planner-card">
+            <p class="eyebrow">Recent Notes</p>
+            <div id="recentNotesList" class="card-list"></div>
+          </article>
+          <article class="planner-card">
+            <p class="eyebrow">Recent Mistakes</p>
+            <div id="mistakeList" class="card-list"></div>
+          </article>
+        </aside>
+      </section>
+    </main>
+  </div>
+
+  <template id="moduleTemplate">
+    <article class="module-card">
+      <div class="module-head">
+        <div>
+          <p class="module-year"></p>
+          <h4 class="module-title"></h4>
+          <p class="module-subtitle"></p>
+        </div>
+        <div class="module-links"></div>
+      </div>
+      <div class="progress-bar"><div class="progress-fill"></div></div>
+      <div class="module-stats"></div>
+      <details class="module-details">
+        <summary class="module-details-head">
+          <div>
+            <p class="eyebrow">Browse Content</p>
+            <h5 class="module-details-title">Direct access to sections, topics, videos, and quizzes</h5>
+          </div>
+          <div class="module-quick-actions"></div>
+        </summary>
+        <div class="module-details-layout">
+          <section class="module-primary-panel">
+            <div class="topic-list"></div>
+          </section>
+          <aside class="module-secondary-panel">
+            <details class="resource-cluster" open>
+              <summary class="resource-cluster-head">
+                <h6>Exam papers</h6>
+                <span class="resource-cluster-meta exam-count"></span>
+              </summary>
+              <div class="card-list exam-list"></div>
+            </details>
+            <details class="resource-cluster">
+              <summary class="resource-cluster-head">
+                <h6>Definition packs</h6>
+                <span class="resource-cluster-meta definition-count"></span>
+              </summary>
+              <div class="card-list definitions-list"></div>
+            </details>
+          </aside>
+        </div>
+      </details>
+    </article>
+  </template>
+
+  <template id="topicTemplate">
+    <details class="topic-card">
+      <summary>
+        <div>
+          <p class="topic-section"></p>
+          <h6 class="topic-name"></h6>
+        </div>
+        <div class="topic-metrics"></div>
+      </summary>
+      <div class="topic-body">
+        <div class="topic-actions"></div>
+        <div class="topic-checks"></div>
+        <div class="card-list quiz-list"></div>
+        <div class="card-list video-list"></div>
+        <div class="card-list article-list"></div>
+      </div>
+    </details>
+  </template>
+
+  <dialog id="quizDialog" class="quiz-dialog">
+    <div class="quiz-shell">
+      <div class="quiz-topbar">
+        <div>
+          <p class="eyebrow">Quiz Mode</p>
+          <h3 id="quizTitle">Quiz</h3>
+          <p id="quizMeta" class="result-meta"></p>
+        </div>
+        <button class="button button-ghost" id="closeQuizBtn" type="button">Close</button>
+      </div>
+      <div id="quizScoreboard" class="quiz-scoreboard"></div>
+      <div id="quizQuestionMount" class="quiz-question-mount"></div>
+      <div class="quiz-actions">
+        <button class="button button-ghost" id="prevQuizBtn" type="button">Previous</button>
+        <button class="button" id="nextQuizBtn" type="button">Next</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="flashcardDialog" class="quiz-dialog">
+    <div class="quiz-shell">
+      <div class="quiz-topbar">
+        <div>
+          <p class="eyebrow">Spaced Revision</p>
+          <h3 id="flashcardTitle">Flashcards</h3>
+          <p id="flashcardMeta" class="result-meta"></p>
+        </div>
+        <button class="button button-ghost" id="closeFlashcardBtn" type="button">Close</button>
+      </div>
+      <div id="flashcardMount" class="flashcard-mount"></div>
+      <div class="flashcard-actions">
+        <button class="button button-ghost" id="revealFlashcardBtn" type="button">Reveal answer</button>
+        <button class="button button-ghost" id="flashcardAgainBtn" type="button">Again</button>
+        <button class="button button-ghost" id="flashcardHardBtn" type="button">Hard</button>
+        <button class="button button-ghost" id="flashcardGoodBtn" type="button">Good</button>
+        <button class="button" id="flashcardEasyBtn" type="button">Easy</button>
+      </div>
+    </div>
+  </dialog>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
