@@ -60,7 +60,7 @@ def build_video_order_lookup(module: dict) -> dict:
                     entry = {
                         "displayOrder": order,
                         "title": (lesson.get("title") or "").strip(),
-                        "displayTitle": f"Video {order}: {(lesson.get('title') or '').strip()}".strip(": "),
+                        "displayTitle": f"Video {order} - {(lesson.get('title') or '').strip()}".rstrip(" -"),
                     }
                     for key in (
                         ("uniqueCode", normalize_video_value(lesson.get("uniqueCode"))),
@@ -90,7 +90,8 @@ def resolve_video_metadata(video_order_lookup: dict, subsection_number: int, les
             break
     display_order = lesson_json.get("displayOrder") or (match or {}).get("displayOrder")
     base_title = (lesson_json.get("title") or (match or {}).get("title") or strip_video_dir_prefix(lesson_dir.name)).strip()
-    display_title = lesson_json.get("displayTitle") or (match or {}).get("displayTitle") or (f"Video {display_order}: {base_title}" if display_order else base_title)
+    canonical_display_title = f"Video {display_order} - {base_title}".rstrip(" -") if display_order else base_title
+    display_title = canonical_display_title or lesson_json.get("displayTitle") or (match or {}).get("displayTitle") or base_title
     return {
         "lessonJson": lesson_json,
         "displayOrder": display_order,

@@ -74,10 +74,12 @@ function archiveUrl(path) {
 }
 
 function getVideoLabel(video, fallbackIndex = null) {
+  if (video?.displayTitle) return video.displayTitle;
   const order = Number(video?.displayOrder);
-  if (Number.isFinite(order) && order > 0) return `Video ${order}`;
-  if (fallbackIndex != null) return `Video ${fallbackIndex + 1}`;
-  return "Video";
+  const title = String(video?.title || "").trim();
+  if (Number.isFinite(order) && order > 0) return title ? `Video ${order} - ${title}` : `Video ${order}`;
+  if (fallbackIndex != null) return title ? `Video ${fallbackIndex + 1} - ${title}` : `Video ${fallbackIndex + 1}`;
+  return title ? `Video - ${title}` : "Video";
 }
 
 async function fetchChunk(url, offset, size = 1024 * 1024) {

@@ -661,7 +661,7 @@ def export_video_lesson(module_dir: Path, section_name: str, subsection_name: st
     media = meta.get("media", {})
     lesson_payload = dict(lesson)
     lesson_payload["displayOrder"] = lesson_order
-    lesson_payload["displayTitle"] = f"Video {lesson_order}: {lesson.get('title') or wistia_id}"
+    lesson_payload["displayTitle"] = f"Video {lesson_order} - {lesson.get('title') or wistia_id}"
     write_json(video_dir / "lesson.json", lesson_payload)
 
     title_html = html.escape(lesson.get("title") or wistia_id)
