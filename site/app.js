@@ -43,16 +43,40 @@ const state = {
   paperTimerHandle: null,
 };
 
-const ARCHIVE_ROOT = new URL("../", window.location.href);
+const LOCAL_ARCHIVE_ROOT = new URL("../", window.location.href).toString();
+const HOSTED_ARCHIVE_ROOT = "https://storage.googleapis.com/uplearn-economics-study-dashboard-assets-260426/";
+const LOCAL_ARCHIVE_HOSTNAMES = new Set(["127.0.0.1", "localhost"]);
+
+function getArchiveRoot() {
+  return LOCAL_ARCHIVE_HOSTNAMES.has(window.location.hostname) ? LOCAL_ARCHIVE_ROOT : HOSTED_ARCHIVE_ROOT;
+}
 
 function archiveUrl(path) {
   if (!path) return null;
-  const normalized = String(path).replaceAll("\\", "/");
+  const normalized = String(path).replaceAll("\\", "/").replace(/^\/+/, "");
   const encoded = normalized
     .split("/")
     .map((segment) => encodeURIComponent(segment))
     .join("/");
-  return new URL(encoded, ARCHIVE_ROOT).toString();
+  return new URL(encoded, getArchiveRoot()).toString();
+}
+
+async function fetchChunk(url, offset, size = 1024 * 1024) {
+  const safeOffset = Math.max(0, Number(offset) || 0);
+  const safeSize = Math.max(1, Number(size) || 1024 * 1024);
+  const end = safeOffset + safeSize - 1;
+  const response = await fetch(url, {
+    mode: "cors",
+    headers: {
+      Range: `bytes=${safeOffset}-${end}`,
+    },
+  });
+
+  if (response.status !== 206 && response.status !== 200) {
+    throw new Error(`Unexpected response ${response.status}`);
+  }
+
+  return response.arrayBuffer();
 }
 
 const searchInput = document.getElementById("searchInput");

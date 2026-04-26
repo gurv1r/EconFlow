@@ -1,0 +1,18 @@
+﻿[
+  {
+    "origin": [
+      "https://gurv1r.github.io",
+      "http://127.0.0.1:8000",
+      "http://localhost:8000"
+    ],
+    "method": ["GET", "HEAD", "OPTIONS"],
+    "responseHeader": [
+      "Content-Type",
+      "Content-Length",
+      "Accept-Ranges",
+      "Content-Range",
+      "ETag"
+    ],
+    "maxAgeSeconds": 3600
+  }
+]

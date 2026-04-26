@@ -122,7 +122,31 @@ Use the dashboard export/import controls to back up or move progress between bro
 
 This repository includes a GitHub Actions workflow that publishes the `site/` folder to GitHub Pages.
 
-The hosted version is useful for browsing the static interface and generated catalog. Local archive links, videos, quiz source files, and other ignored raw assets require the local `archive/` folder and are therefore best used through the local server.
+The hosted version can browse the static interface, generated catalog, and archive-backed assets through Google Cloud Storage while local development still reads from the ignored `archive/` folder.
+
+Archive backend behavior:
+
+- Local mode on `127.0.0.1` or `localhost` keeps loading raw assets from the local `../archive/` path.
+- Hosted mode on GitHub Pages switches `site/app.js` to `https://storage.googleapis.com/uplearn-economics-study-dashboard-assets-260426/`.
+- Catalog paths stay unchanged at `archive/UpLearn Economics/...`, so the same `site/catalog.json` works in both environments.
+
+GCS bucket details:
+
+- Project ID: `uplearn-econ-dash-260426`
+- Bucket: `gs://uplearn-economics-study-dashboard-assets-260426`
+- Region: `europe-west2`
+- Public base URL: `https://storage.googleapis.com/uplearn-economics-study-dashboard-assets-260426/`
+
+CORS is configured for:
+
+- `https://gurv1r.github.io`
+- `http://127.0.0.1:8000`
+- `http://localhost:8000`
+
+Supported methods and response headers:
+
+- Methods: `GET`, `HEAD`, `OPTIONS`
+- Response headers: `Content-Type`, `Content-Length`, `Accept-Ranges`, `Content-Range`, `ETag`
 
 To enable Pages:
 
@@ -154,6 +178,22 @@ The following are intentionally kept out of Git:
 - generated preview screenshots
 
 This keeps the repository lightweight and focused on the dashboard source, generated catalog, and automation scripts rather than the full exported course dump.
+
+## GCS Archive Sync
+
+Upload or resume the archive sync from the project root with:
+
+```powershell
+& 'C:\Program Files (x86)\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd' storage rsync archive gs://uplearn-economics-study-dashboard-assets-260426/archive --recursive
+```
+
+The sync preserves the `archive/...` prefix exactly so existing catalog paths continue to line up with the exported archive.
+
+To reapply the bucket CORS policy:
+
+```powershell
+& 'C:\Program Files (x86)\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd' storage buckets update gs://uplearn-economics-study-dashboard-assets-260426 --cors-file=gcs-cors.json
+```
 
 ## Development Notes
 

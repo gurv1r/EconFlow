@@ -12,7 +12,7 @@ The tracked app is the dashboard and its generated catalog. The raw exported arc
 
 - `site/index.html`: static HTML shell and templates for the dashboard.
 - `site/styles.css`: all visual styling for the dashboard.
-- `site/app.js`: all client-side app logic.
+- `site/app.js`: all client-side app logic, including local-vs-hosted archive URL resolution.
 - `site/catalog.json`: generated catalog consumed by `site/app.js`.
 - `serve_uplearn_site.py`: local HTTP server for the project root. It supports byte range requests, which matters for local video playback.
 - `launch_uplearn_site.ps1`: Windows convenience launcher. It starts the local server if needed and opens `http://127.0.0.1:8000/site/`.
@@ -36,7 +36,7 @@ These paths are expected locally but should not be committed without a deliberat
 - `full_selenium_walkthrough_report.json`
 - `site_preview*.png`
 
-The hosted GitHub Pages version can load the dashboard and `site/catalog.json`, but raw archive links, local video playback, quiz source-file fetches, and archive-backed study resources need the ignored `archive/` folder to exist beside `site/` in the local project root.
+The hosted GitHub Pages version can load the dashboard and `site/catalog.json`. Archive-backed resources can also be served from Google Cloud Storage in hosted mode, while local development still expects the ignored `archive/` folder to exist beside `site/` in the local project root.
 
 ## Data Flow
 
@@ -44,8 +44,9 @@ The hosted GitHub Pages version can load the dashboard and `site/catalog.json`, 
 2. `build_uplearn_site.py` reads the local archive and writes a compact generated catalog to `site/catalog.json`.
 3. `site/index.html`, `site/styles.css`, and `site/app.js` render the study dashboard in the browser.
 4. `site/app.js` fetches `./catalog.json` at boot.
-5. Archive-backed resources are resolved by `archiveUrl(path)`, which points one level above `site/`.
-6. User progress lives only in browser `localStorage` under `uplearn-econ-progress-v3`.
+5. Archive-backed resources are resolved by `archiveUrl(path)`.
+6. `archiveUrl(path)` uses the local `../archive/` path on `127.0.0.1` and `localhost`, and uses the Google Cloud Storage base URL in hosted mode.
+7. User progress lives only in browser `localStorage` under `uplearn-econ-progress-v3`.
 
 ## Catalog Snapshot
 
@@ -152,9 +153,9 @@ Keep new UI consistent with the existing dashboard language unless intentionally
 
 ## Deployment
 
-The GitHub Pages workflow publishes only the `site/` directory. This is correct for a static public/shareable dashboard, but it means local archive-backed links are not fully functional in the hosted version unless the archive is also published.
+The GitHub Pages workflow publishes only the `site/` directory. The hosted app therefore depends on the external Google Cloud Storage bucket for archive-backed videos, JSON, HTML, and raw assets.
 
-Before changing Pages behavior, decide whether the raw archive should remain private/local. Publishing `archive/` could expose large exported course materials and should be treated as a deliberate privacy/copyright decision.
+Before changing Pages behavior or bucket permissions, decide whether the raw archive should remain private/local. Publishing exported course materials should be treated as a deliberate privacy/copyright decision.
 
 ## Testing
 
@@ -232,13 +233,38 @@ Change progress shape:
 Change raw archive rendering:
 
 1. Check how `archiveUrl(path)` resolves paths.
-2. Confirm the target file exists under local `archive/`.
-3. Keep hosted GitHub Pages limitations in mind.
+2. Confirm the target file exists under local `archive/` and, when relevant, under the configured Google Cloud Storage bucket.
+3. Keep the local/hosted split in mind: localhost uses local files, GitHub Pages uses GCS.
+
+## GCS Archive Backend
+
+Hosted archive assets are stored in:
+
+- project: `uplearn-econ-dash-260426`
+- bucket: `gs://uplearn-economics-study-dashboard-assets-260426`
+- region: `europe-west2`
+- public base URL: `https://storage.googleapis.com/uplearn-economics-study-dashboard-assets-260426/`
+
+The upload preserves the `archive/...` prefix exactly so existing catalog paths keep working without regeneration.
+
+Recommended upload command from the repo root:
+
+```powershell
+& 'C:\Program Files (x86)\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd' storage rsync archive gs://uplearn-economics-study-dashboard-assets-260426/archive --recursive
+```
+
+Current CORS policy should allow:
+
+- origins: `https://gurv1r.github.io`, `http://127.0.0.1:8000`, `http://localhost:8000`
+- methods: `GET`, `HEAD`, `OPTIONS`
+- response headers: `Content-Type`, `Content-Length`, `Accept-Ranges`, `Content-Range`, `ETag`
+
+Do not make the bucket public without explicit user confirmation because the archive contains exported course materials.
 
 ## Known Limitations
 
 - The app is a single large vanilla JS file, so related behavior may be separated by helper order rather than modules.
-- Hosted Pages does not include raw archive content.
+- Hosted Pages does not include raw archive content directly; it relies on the external Google Cloud Storage bucket.
 - The catalog is generated and can become stale if the raw archive changes.
 - Browser progress is per-origin localStorage; changing host/port/domain changes where progress is stored.
 - Selenium scripts assume the site is served at `http://127.0.0.1:8000/site/`.
