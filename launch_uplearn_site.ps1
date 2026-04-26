@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Stop"
 
-$projectRoot = "C:\Users\Gurvir\Documents\2026-04-23-i-have-chrome-open-with-my-2"
+$projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $siteUrl = "http://127.0.0.1:8000/site/"
 $chromePath = "C:\Program Files\Google\Chrome\Application\chrome.exe"
 
