@@ -82,6 +82,146 @@ function getVideoLabel(video, fallbackIndex = null) {
   return title ? `Video - ${title}` : "Video";
 }
 
+function getVideoIdentity(video) {
+  return `${video?.videoPath || ""}::${video?.htmlPath || ""}::${video?.title || ""}`;
+}
+
+function getTopicVideoIndex(topic, video) {
+  const targetIdentity = getVideoIdentity(video);
+  return topic?.videos?.findIndex((candidate) => getVideoIdentity(candidate) === targetIdentity) ?? -1;
+}
+
+function getAdjacentTopicVideos(topic, video) {
+  const index = getTopicVideoIndex(topic, video);
+  if (index < 0) return { index: -1, previousVideo: null, nextVideo: null };
+  return {
+    index,
+    previousVideo: topic.videos[index - 1] || null,
+    nextVideo: topic.videos[index + 1] || null,
+  };
+}
+
+function isTypingTarget(target) {
+  if (!(target instanceof HTMLElement)) return false;
+  return Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
+}
+
+function formatVideoShortcut(text) {
+  const key = document.createElement("kbd");
+  key.className = "shortcut-key";
+  key.textContent = text;
+  return key;
+}
+
+function buildVideoCommandBar(player, options = {}) {
+  const { nextVideo = null, onPlayNext = null } = options;
+  const controls = document.createElement("section");
+  controls.className = "video-command-bar";
+  controls.tabIndex = 0;
+  controls.setAttribute("aria-label", "Video keyboard and playback controls");
+
+  const primary = document.createElement("div");
+  primary.className = "video-command-group";
+
+  const secondary = document.createElement("div");
+  secondary.className = "video-command-group video-command-group-shortcuts";
+
+  const togglePlayback = () => {
+    if (player.paused) player.play();
+    else player.pause();
+  };
+
+  const seekBy = (seconds) => {
+    if (!Number.isFinite(player.duration) && !Number.isFinite(player.currentTime)) return;
+    const duration = Number.isFinite(player.duration) ? player.duration : player.currentTime + Math.abs(seconds);
+    const nextTime = Math.min(Math.max(player.currentTime + seconds, 0), duration);
+    player.currentTime = nextTime;
+  };
+
+  const toggleMute = () => {
+    player.muted = !player.muted;
+  };
+
+  const toggleFullscreen = async () => {
+    const container = player.closest(".study-video-player") || player;
+    if (document.fullscreenElement) {
+      await document.exitFullscreen();
+      return;
+    }
+    if (container.requestFullscreen) await container.requestFullscreen();
+  };
+
+  primary.append(
+    buttonPill("Play / Pause", togglePlayback),
+    buttonPill("Back 10s", () => seekBy(-10)),
+    buttonPill("Forward 10s", () => seekBy(10)),
+    buttonPill("Mute", toggleMute),
+  );
+
+  if (document.fullscreenEnabled) {
+    primary.append(buttonPill("Fullscreen", () => {
+      toggleFullscreen().catch((error) => console.error("Fullscreen failed", error));
+    }));
+  }
+
+  if (nextVideo && onPlayNext) {
+    const nextLabel = getVideoLabel(nextVideo);
+    const nextButton = buttonPill(`Play Next: ${nextLabel}`, onPlayNext);
+    nextButton.setAttribute("aria-keyshortcuts", "N");
+    primary.append(nextButton);
+  }
+
+  const shortcuts = [
+    ["Space", "play or pause"],
+    ["J / Left", "back"],
+    ["L / Right", "forward"],
+    ["M", "mute"],
+    document.fullscreenEnabled ? ["F", "fullscreen"] : null,
+    nextVideo && onPlayNext ? ["N", "play next"] : null,
+  ].filter(Boolean);
+
+  for (const [keyText, label] of shortcuts) {
+    const item = document.createElement("span");
+    item.className = "video-shortcut";
+    item.append(formatVideoShortcut(keyText), document.createTextNode(label));
+    secondary.append(item);
+  }
+
+  const handleShortcut = (event) => {
+    if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || isTypingTarget(event.target)) return;
+    const target = event.target instanceof HTMLElement ? event.target : null;
+    const scopedToControls = target && controls.contains(target);
+    const scopedToVideo = target && target.closest(".study-video-player") && player.closest(".study-video-player")?.contains(target);
+    if (!scopedToControls && !scopedToVideo && document.activeElement !== player) return;
+
+    const key = event.key.toLowerCase();
+    if (key === " " || key === "k") {
+      event.preventDefault();
+      togglePlayback();
+    } else if (key === "arrowleft" || key === "j") {
+      event.preventDefault();
+      seekBy(-10);
+    } else if (key === "arrowright" || key === "l") {
+      event.preventDefault();
+      seekBy(10);
+    } else if (key === "m") {
+      event.preventDefault();
+      toggleMute();
+    } else if (key === "f" && document.fullscreenEnabled) {
+      event.preventDefault();
+      toggleFullscreen().catch((error) => console.error("Fullscreen failed", error));
+    } else if (key === "n" && nextVideo && onPlayNext) {
+      event.preventDefault();
+      onPlayNext();
+    }
+  };
+
+  controls.addEventListener("keydown", handleShortcut);
+  player.addEventListener("keydown", handleShortcut);
+  controls.append(primary, secondary);
+  return controls;
+}
+
 async function fetchChunk(url, offset, size = 1024 * 1024) {
   const safeOffset = Math.max(0, Number(offset) || 0);
   const safeSize = Math.max(1, Number(size) || 1024 * 1024);
@@ -1728,11 +1868,22 @@ async function openVideoStudy(topic, video, extraActions = []) {
   markTopicTouch(topic.id, "videos");
   const content = document.createElement("div");
   content.className = "study-view study-video";
+  const { previousVideo, nextVideo } = getAdjacentTopicVideos(topic, video);
+  const openNextVideo = () => {
+    if (nextVideo) openVideoStudy(topic, nextVideo, buildTopicStudyActions(topic, `video:${getTopicVideoIndex(topic, nextVideo)}`));
+  };
+  const openPreviousVideo = () => {
+    if (previousVideo) openVideoStudy(topic, previousVideo, buildTopicStudyActions(topic, `video:${getTopicVideoIndex(topic, previousVideo)}`));
+  };
   if (video.videoPath) {
+    const playerShell = document.createElement("div");
+    playerShell.className = "study-video-player";
     const player = document.createElement("video");
     player.src = archiveUrl(video.videoPath);
     player.controls = true;
     player.preload = "metadata";
+    player.setAttribute("playsinline", "true");
+    player.setAttribute("aria-label", `${getVideoLabel(video)} video player`);
     player.addEventListener("play", () => markTopicTouch(topic.id, "videos"));
     player.addEventListener("error", async () => {
       if (video.wistiaPath) {
@@ -1759,7 +1910,7 @@ async function openVideoStudy(topic, video, extraActions = []) {
 
             const container = document.createElement("div");
             container.append(iframe, script);
-            player.replaceWith(container);
+            playerShell.replaceChildren(container);
             return;
           }
         } catch (e) {
@@ -1776,9 +1927,14 @@ async function openVideoStudy(topic, video, extraActions = []) {
       fallback.style.border = "1px solid var(--line)";
       fallback.style.borderRadius = "18px";
       fallback.innerHTML = `<h4>Video Unavailable</h4><p style="margin-top:8px">The video file couldn't be loaded. It is likely not included in this offline archive export.</p>`;
-      player.replaceWith(fallback);
+      playerShell.replaceChildren(fallback);
     });
-    content.append(player);
+    const commandBar = buildVideoCommandBar(player, { nextVideo, onPlayNext: openNextVideo });
+    if (previousVideo) {
+      commandBar.querySelector(".video-command-group")?.prepend(buttonPill("Previous Video", openPreviousVideo));
+    }
+    playerShell.append(player);
+    content.append(playerShell, commandBar);
   }
   if (video.htmlPath) {
     const html = await fetchStudyHtml(video.htmlPath);
@@ -1800,6 +1956,8 @@ async function openVideoStudy(topic, video, extraActions = []) {
       htmlPath: video.htmlPath || null,
     },
     actions: [
+      previousVideo ? { label: `Previous: ${getVideoLabel(previousVideo)}`, action: openPreviousVideo } : null,
+      nextVideo ? { label: `Play next: ${getVideoLabel(nextVideo)}`, action: openNextVideo } : null,
       ...extraActions,
       { label: "Open raw video", href: archiveUrl(video.videoPath) },
       video.htmlPath ? { label: "Open raw notes", href: archiveUrl(video.htmlPath) } : null,
