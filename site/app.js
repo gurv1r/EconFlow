@@ -1,5 +1,7 @@
 const STORAGE_KEY = "uplearn-econ-progress-v3";
 const DAY_MS = 24 * 60 * 60 * 1000;
+const FIREBASE_SDK_VERSION = "12.12.1";
+const CLOUD_PROGRESS_DOC_ID = "default";
 const PAPER_GUIDANCE = {
   "Paper 1": "Microeconomics focus: chains of reasoning, diagrams, and market failure evaluation.",
   "Paper 2": "Macroeconomics focus: AD/AS logic, policy trade-offs, and real-world performance data.",
@@ -41,6 +43,16 @@ const state = {
   studySession: null,
   resourceCache: new Map(),
   paperTimerHandle: null,
+  cloud: {
+    available: false,
+    configured: false,
+    auth: null,
+    db: null,
+    user: null,
+    status: "Local-only progress",
+    syncLabel: "Not synced",
+    saveTimer: null,
+  },
 };
 
 const LOCAL_ARCHIVE_ROOT = new URL("../", window.location.href).toString();
@@ -136,6 +148,19 @@ const topicTemplate = document.getElementById("topicTemplate");
 const exportProgressBtn = document.getElementById("exportProgressBtn");
 const importProgressInput = document.getElementById("importProgressInput");
 const resetProgressBtn = document.getElementById("resetProgressBtn");
+const authPanelTitle = document.getElementById("authPanelTitle");
+const authStatusText = document.getElementById("authStatusText");
+const authForm = document.getElementById("authForm");
+const authSessionPanel = document.getElementById("authSessionPanel");
+const authEmailInput = document.getElementById("authEmailInput");
+const authPasswordInput = document.getElementById("authPasswordInput");
+const signUpBtn = document.getElementById("signUpBtn");
+const logInBtn = document.getElementById("logInBtn");
+const logOutBtn = document.getElementById("logOutBtn");
+const pushCloudBtn = document.getElementById("pushCloudBtn");
+const pullCloudBtn = document.getElementById("pullCloudBtn");
+const authUserBadge = document.getElementById("authUserBadge");
+const cloudSyncBadge = document.getElementById("cloudSyncBadge");
 const startDueReviewBtn = document.getElementById("startDueReviewBtn");
 const startMixedReviewBtn = document.getElementById("startMixedReviewBtn");
 const focusWeakTopicsBtn = document.getElementById("focusWeakTopicsBtn");
@@ -169,6 +194,8 @@ async function boot() {
   seedFlashcards();
   populateFilters();
   bindEvents();
+  renderCloudUi();
+  await initCloudLayer();
   renderStats(state.catalog.stats);
   applyFilters();
   updateResumeStudyButton();
@@ -226,6 +253,11 @@ function bindEvents() {
   importProgressInput.addEventListener("change", importProgress);
   resetProgressBtn.addEventListener("click", resetProgress);
   resumeStudyBtn?.addEventListener("click", restoreLastStudy);
+  signUpBtn?.addEventListener("click", signUpWithEmail);
+  logInBtn?.addEventListener("click", logInWithEmail);
+  logOutBtn?.addEventListener("click", logOutUser);
+  pushCloudBtn?.addEventListener("click", () => pushCloudProgress(true));
+  pullCloudBtn?.addEventListener("click", () => pullCloudProgress(true));
 
   startDueReviewBtn.addEventListener("click", () => startFlashcardSession("due"));
   startMixedReviewBtn.addEventListener("click", () => startFlashcardSession("mixed"));
@@ -281,6 +313,8 @@ function createEmptyProgress() {
 
 function normalizeProgress() {
   if (!state.progress || typeof state.progress !== "object") state.progress = createEmptyProgress();
+  state.progress.version ??= 3;
+  state.progress.updatedAt ??= null;
   state.progress.topics ??= {};
   state.progress.quizzes ??= {};
   state.progress.flashcards ??= {};
@@ -295,9 +329,287 @@ function normalizeProgress() {
   state.progress.preferences.allowFuture ??= false;
 }
 
-function saveProgress() {
+function saveProgress(options = {}) {
   state.progress.updatedAt = new Date().toISOString();
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.progress));
+  if (!options.skipCloudSync) scheduleCloudSave();
+}
+
+function getCloudConfig() {
+  const root = globalThis.UPLEARN_CLOUD_CONFIG || {};
+  return {
+    enabled: root.enabled !== false,
+    firebase: root.firebase || {},
+  };
+}
+
+function hasFirebaseConfig(config) {
+  return Boolean(config?.apiKey && config?.authDomain && config?.projectId && config?.appId);
+}
+
+function renderCloudUi() {
+  authPanelTitle.textContent = state.cloud.user ? "Cloud sync is active" : "Cloud sync is local-only right now";
+  authStatusText.textContent = state.cloud.status;
+  cloudSyncBadge.textContent = state.cloud.syncLabel;
+  authUserBadge.textContent = state.cloud.user?.email || "Signed out";
+
+  const signedIn = !!state.cloud.user;
+  authForm.hidden = signedIn || !state.cloud.configured;
+  authSessionPanel.hidden = !signedIn;
+
+  const actionDisabled = !signedIn;
+  pushCloudBtn.disabled = actionDisabled;
+  pullCloudBtn.disabled = actionDisabled;
+  logOutBtn.disabled = actionDisabled;
+  signUpBtn.disabled = !state.cloud.configured;
+  logInBtn.disabled = !state.cloud.configured;
+}
+
+async function initCloudLayer() {
+  const { enabled, firebase } = getCloudConfig();
+  state.cloud.available = enabled;
+  state.cloud.configured = enabled && hasFirebaseConfig(firebase);
+
+  if (!enabled) {
+    state.cloud.status = "Cloud auth is disabled in firebase-config.js.";
+    renderCloudUi();
+    return;
+  }
+
+  if (!state.cloud.configured) {
+    state.cloud.status = "Firebase config is missing. Fill in site/firebase-config.js to enable sign up and sync.";
+    renderCloudUi();
+    return;
+  }
+
+  state.cloud.status = "Connecting to Firebase Auth and Firestore...";
+  renderCloudUi();
+
+  try {
+    const [
+      { initializeApp },
+      { getAuth, setPersistence, browserLocalPersistence, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut },
+      { getFirestore, doc, getDoc, setDoc, serverTimestamp },
+    ] = await Promise.all([
+      import(`https://www.gstatic.com/firebasejs/${FIREBASE_SDK_VERSION}/firebase-app.js`),
+      import(`https://www.gstatic.com/firebasejs/${FIREBASE_SDK_VERSION}/firebase-auth.js`),
+      import(`https://www.gstatic.com/firebasejs/${FIREBASE_SDK_VERSION}/firebase-firestore.js`),
+    ]);
+
+    const app = initializeApp(firebase);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    await setPersistence(auth, browserLocalPersistence);
+
+    state.cloud.auth = auth;
+    state.cloud.db = db;
+    state.cloud.firebaseFns = {
+      createUserWithEmailAndPassword,
+      signInWithEmailAndPassword,
+      signOut,
+      onAuthStateChanged,
+      doc,
+      getDoc,
+      setDoc,
+      serverTimestamp,
+    };
+
+    onAuthStateChanged(auth, async (user) => {
+      try {
+        state.cloud.user = user || null;
+        if (!user) {
+          state.cloud.status = "Signed out. Progress still saves locally on this browser.";
+          state.cloud.syncLabel = "Local only";
+          renderCloudUi();
+          return;
+        }
+
+        state.cloud.status = `Signed in as ${user.email}. Checking cloud save...`;
+        state.cloud.syncLabel = "Syncing";
+        renderCloudUi();
+        await pullCloudProgress(false);
+      } catch (error) {
+        state.cloud.status = `Cloud sync error: ${error.message || error}`;
+        state.cloud.syncLabel = "Sync failed";
+        renderCloudUi();
+      }
+    });
+  } catch (error) {
+    state.cloud.status = `Firebase failed to initialize: ${error.message || error}`;
+    state.cloud.syncLabel = "Unavailable";
+    renderCloudUi();
+  }
+}
+
+function getProgressTimestamp(progress = state.progress) {
+  return Date.parse(progress?.updatedAt || "") || 0;
+}
+
+function isProgressEmpty(progress = state.progress) {
+  return !Object.keys(progress.topics || {}).length
+    && !Object.keys(progress.quizzes || {}).length
+    && !Object.keys(progress.flashcards || {}).length
+    && !Object.keys(progress.notes || {}).length
+    && !Object.keys(progress.noteIndex || {}).length
+    && !Object.keys(progress.examPapers || {}).length
+    && !Object.keys(progress.quizReviews || {}).length
+    && !progress.lastStudy;
+}
+
+function applyLoadedProgress(progress, options = {}) {
+  state.progress = progress;
+  normalizeProgress();
+  syncPreferenceControls();
+  seedFlashcards();
+  saveProgress({ skipCloudSync: options.skipCloudSync ?? true });
+  applyFilters();
+  updateResumeStudyButton();
+}
+
+function getCloudProgressDocRef() {
+  const { doc } = state.cloud.firebaseFns;
+  return doc(state.cloud.db, "users", state.cloud.user.uid, "progress", CLOUD_PROGRESS_DOC_ID);
+}
+
+function scheduleCloudSave() {
+  if (!state.cloud.user || !state.cloud.db) return;
+  clearTimeout(state.cloud.saveTimer);
+  state.cloud.syncLabel = "Pending sync";
+  renderCloudUi();
+  state.cloud.saveTimer = setTimeout(() => {
+    pushCloudProgress(false).catch((error) => {
+      state.cloud.status = `Cloud sync error: ${error.message || error}`;
+      state.cloud.syncLabel = "Sync failed";
+      renderCloudUi();
+    });
+  }, 1200);
+}
+
+async function pushCloudProgress(showStatus = false) {
+  if (!state.cloud.user || !state.cloud.db) return;
+  if (showStatus) {
+    state.cloud.status = "Uploading progress to Firestore...";
+    state.cloud.syncLabel = "Syncing";
+    renderCloudUi();
+  }
+
+  const { setDoc, serverTimestamp } = state.cloud.firebaseFns;
+  await setDoc(getCloudProgressDocRef(), {
+    progress: state.progress,
+    updatedAt: serverTimestamp(),
+    clientUpdatedAt: state.progress.updatedAt || new Date().toISOString(),
+  }, { merge: true });
+
+  state.cloud.status = `Cloud save updated for ${state.cloud.user.email}.`;
+  state.cloud.syncLabel = `Synced ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+  renderCloudUi();
+}
+
+async function pullCloudProgress(showStatus = false) {
+  if (!state.cloud.user || !state.cloud.db) return;
+  if (showStatus) {
+    state.cloud.status = "Checking Firestore progress...";
+    state.cloud.syncLabel = "Syncing";
+    renderCloudUi();
+  }
+
+  const { getDoc } = state.cloud.firebaseFns;
+  const snapshot = await getDoc(getCloudProgressDocRef());
+  if (!snapshot.exists()) {
+    if (isProgressEmpty()) {
+      state.cloud.status = `No cloud save exists yet for ${state.cloud.user.email}.`;
+      state.cloud.syncLabel = "Cloud empty";
+      renderCloudUi();
+      return;
+    }
+    await pushCloudProgress(false);
+    return;
+  }
+
+  const remoteProgress = snapshot.data()?.progress;
+  if (!remoteProgress || typeof remoteProgress !== "object") {
+    state.cloud.status = "Cloud save exists, but it does not contain a valid progress payload.";
+    state.cloud.syncLabel = "Cloud invalid";
+    renderCloudUi();
+    return;
+  }
+
+  const localTs = getProgressTimestamp(state.progress);
+  const remoteTs = getProgressTimestamp(remoteProgress);
+
+  if (!localTs || remoteTs > localTs) {
+    applyLoadedProgress(remoteProgress, { skipCloudSync: true });
+    state.cloud.status = `Loaded newer cloud progress for ${state.cloud.user.email}.`;
+    state.cloud.syncLabel = "Pulled from cloud";
+    renderCloudUi();
+    return;
+  }
+
+  if (localTs > remoteTs) {
+    await pushCloudProgress(false);
+    return;
+  }
+
+  state.cloud.status = `Cloud save already matches this device for ${state.cloud.user.email}.`;
+  state.cloud.syncLabel = "Already synced";
+  renderCloudUi();
+}
+
+async function signUpWithEmail() {
+  if (!state.cloud.configured) return;
+  const email = authEmailInput.value.trim();
+  const password = authPasswordInput.value;
+  if (!email || !password) {
+    state.cloud.status = "Enter an email address and password to create an account.";
+    renderCloudUi();
+    return;
+  }
+
+  try {
+    state.cloud.status = "Creating your account...";
+    renderCloudUi();
+    const { createUserWithEmailAndPassword } = state.cloud.firebaseFns;
+    await createUserWithEmailAndPassword(state.cloud.auth, email, password);
+    authPasswordInput.value = "";
+  } catch (error) {
+    state.cloud.status = `Sign-up failed: ${error.message || error}`;
+    renderCloudUi();
+  }
+}
+
+async function logInWithEmail() {
+  if (!state.cloud.configured) return;
+  const email = authEmailInput.value.trim();
+  const password = authPasswordInput.value;
+  if (!email || !password) {
+    state.cloud.status = "Enter an email address and password to log in.";
+    renderCloudUi();
+    return;
+  }
+
+  try {
+    state.cloud.status = "Signing you in...";
+    renderCloudUi();
+    const { signInWithEmailAndPassword } = state.cloud.firebaseFns;
+    await signInWithEmailAndPassword(state.cloud.auth, email, password);
+    authPasswordInput.value = "";
+  } catch (error) {
+    state.cloud.status = `Login failed: ${error.message || error}`;
+    renderCloudUi();
+  }
+}
+
+async function logOutUser() {
+  if (!state.cloud.auth) return;
+  try {
+    clearTimeout(state.cloud.saveTimer);
+    const { signOut } = state.cloud.firebaseFns;
+    await signOut(state.cloud.auth);
+  } catch (error) {
+    state.cloud.status = `Logout failed: ${error.message || error}`;
+    renderCloudUi();
+  }
 }
 
 function updateResumeStudyButton() {
@@ -2507,13 +2819,7 @@ function importProgress(event) {
   const reader = new FileReader();
   reader.onload = () => {
     try {
-      state.progress = JSON.parse(String(reader.result));
-      normalizeProgress();
-      syncPreferenceControls();
-      seedFlashcards();
-      saveProgress();
-      applyFilters();
-      updateResumeStudyButton();
+      applyLoadedProgress(JSON.parse(String(reader.result)), { skipCloudSync: false });
     } catch {
       alert("That file could not be imported.");
     }
@@ -2524,13 +2830,7 @@ function importProgress(event) {
 
 function resetProgress() {
   if (!confirm("Reset all stored checks, quiz scores, notes, paper tracking, and flashcard schedules for this site?")) return;
-  state.progress = createEmptyProgress();
-  normalizeProgress();
-  syncPreferenceControls();
-  seedFlashcards();
-  saveProgress();
-  applyFilters();
-  updateResumeStudyButton();
+  applyLoadedProgress(createEmptyProgress(), { skipCloudSync: false });
 }
 
 function average(values) {

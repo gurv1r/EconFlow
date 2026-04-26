@@ -12,8 +12,9 @@ The tracked app is the dashboard and its generated catalog. The raw exported arc
 
 - `site/index.html`: static HTML shell and templates for the dashboard.
 - `site/styles.css`: all visual styling for the dashboard.
-- `site/app.js`: all client-side app logic, including local-vs-hosted archive URL resolution.
+- `site/app.js`: all client-side app logic, including local-vs-hosted archive URL resolution and cloud auth/progress sync.
 - `site/catalog.json`: generated catalog consumed by `site/app.js`.
+- `site/firebase-config.js`: browser-side Firebase config toggle and placeholders for the auth/sync layer.
 - `serve_uplearn_site.py`: local HTTP server for the project root. It supports byte range requests, which matters for local video playback.
 - `launch_uplearn_site.ps1`: Windows convenience launcher. It starts the local server if needed and opens `http://127.0.0.1:8000/site/`.
 - `build_uplearn_site.py`: builds `site/catalog.json` from the local `archive/UpLearn Economics` export.
@@ -46,7 +47,8 @@ The hosted GitHub Pages version can load the dashboard and `site/catalog.json`. 
 4. `site/app.js` fetches `./catalog.json` at boot.
 5. Archive-backed resources are resolved by `archiveUrl(path)`.
 6. `archiveUrl(path)` uses the local `../archive/` path on `127.0.0.1` and `localhost`, and uses the Google Cloud Storage base URL in hosted mode.
-7. User progress lives only in browser `localStorage` under `uplearn-econ-progress-v3`.
+7. User progress always lives in browser `localStorage` under `uplearn-econ-progress-v3`.
+8. If Firebase is configured, the same progress payload can also sync to Firestore after a user signs in.
 
 ## Catalog Snapshot
 
@@ -139,6 +141,8 @@ Progress is stored in localStorage and can be exported/imported from the UI. The
 
 When changing this model, update `normalizeProgress()` so older saved progress continues to work.
 
+If cloud sync is enabled, keep Firestore payload compatibility in mind too. The app currently stores the whole progress object in one user-scoped document and compares `updatedAt` timestamps to decide whether to pull or push.
+
 ## Styling Notes
 
 The app uses a dark dashboard style with green/blue accents:
@@ -156,6 +160,8 @@ Keep new UI consistent with the existing dashboard language unless intentionally
 The GitHub Pages workflow publishes only the `site/` directory. The hosted app therefore depends on the external Google Cloud Storage bucket for archive-backed videos, JSON, HTML, and raw assets.
 
 Before changing Pages behavior or bucket permissions, decide whether the raw archive should remain private/local. Publishing exported course materials should be treated as a deliberate privacy/copyright decision.
+
+If you enable Firebase auth for the hosted app, the browser-side config in `site/firebase-config.js` must be filled before deploy. The placeholder file is safe to publish but keeps cloud auth disabled.
 
 ## Testing
 
@@ -202,6 +208,7 @@ Primary branch is `main`.
 
 - Do not commit `archive/` unless the user explicitly asks and understands the implications.
 - Do not expose UpLearn auth tokens, cookies, account data, or private course exports.
+- Do not loosen Firestore rules beyond user-owned progress documents without explicit user approval.
 - Do not run `uplearn_econ_export.py` against the live UpLearn API unless the user asks for a fresh export and has authorized token use.
 - Do not overwrite local progress in the browser unless the user asks; reset progress is user-facing and destructive.
 - Avoid destructive Git commands such as hard resets or branch deletion without explicit approval.
@@ -260,6 +267,17 @@ Current CORS policy should allow:
 - response headers: `Content-Type`, `Content-Length`, `Accept-Ranges`, `Content-Range`, `ETag`
 
 Do not make the bucket public without explicit user confirmation because the archive contains exported course materials.
+
+## Firebase Auth Backend
+
+The static Pages app now has an optional Firebase-backed login and progress sync layer.
+
+- config file: `site/firebase-config.js`
+- rules file: `firestore.rules`
+- auth mode: Email/Password
+- data shape: one Firestore document per user at `users/{uid}/progress/default`
+
+The dashboard remains local-first even when cloud sync is enabled. Local progress writes happen immediately, then the app pushes the newer payload to Firestore after sign-in.
 
 ## Known Limitations
 

@@ -148,6 +148,38 @@ Supported methods and response headers:
 - Methods: `GET`, `HEAD`, `OPTIONS`
 - Response headers: `Content-Type`, `Content-Length`, `Accept-Ranges`, `Content-Range`, `ETag`
 
+## Cloud Login And Sync
+
+The dashboard now includes a local-first account system for sign up, log in, and cross-device progress sync using Firebase Authentication and Cloud Firestore.
+
+What it stores:
+
+- topic completion and touches
+- quiz attempts, answers, and review history
+- flashcard scheduling
+- notes and note index
+- exam-paper tracking
+- last opened study session
+- course-stage preferences
+
+How it works:
+
+- The dashboard still writes immediately to browser `localStorage`.
+- When a user signs in, the app compares local progress with the Firestore document and keeps the newer copy.
+- Later edits stay local-first and are pushed to Firestore automatically after a short debounce.
+- Manual `Sync now` and `Pull cloud save` buttons are available in the sidebar UI.
+
+Firebase setup:
+
+1. Create or link a Firebase project for this app.
+2. Add a web app in the Firebase console.
+3. Enable Email/Password under Authentication.
+4. Create a Firestore database.
+5. Apply the rules from [firestore.rules](C:/Users/Gurvir/Documents/2026-04-23-i-have-chrome-open-with-my-2/firestore.rules).
+6. Fill in [site/firebase-config.js](C:/Users/Gurvir/Documents/2026-04-23-i-have-chrome-open-with-my-2/site/firebase-config.js) and set `enabled: true`.
+
+The config file is intentionally checked in with empty placeholders so the static app keeps working before Firebase is wired up.
+
 To enable Pages:
 
 1. Open the repository on GitHub.
@@ -201,3 +233,4 @@ To reapply the bucket CORS policy:
 - Use the local Python server rather than opening `site/index.html` directly, especially when testing media playback or archive links.
 - Avoid committing raw exported course files or browser profile data.
 - Read `agents-descriptor.md` before making larger automated code changes.
+- If you enable cloud auth, remember that Firebase client config belongs in `site/firebase-config.js` and Firestore rules must limit each user to their own document.

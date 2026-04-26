@@ -96,6 +96,39 @@
           <button class="button button-ghost danger-button" id="resetProgressBtn" type="button">Reset progress</button>
         </div>
       </section>
+
+      <section class="tracking-panel">
+        <p class="eyebrow">Account & Sync</p>
+        <h3 id="authPanelTitle">Cloud sync is local-only right now</h3>
+        <p class="lede" id="authStatusText">Add your Firebase web config to enable sign up, log in, and cross-device progress sync.</p>
+
+        <form class="auth-form" id="authForm">
+          <label class="field">
+            <span>Email</span>
+            <input id="authEmailInput" type="email" placeholder="you@example.com" autocomplete="email" />
+          </label>
+          <label class="field">
+            <span>Password</span>
+            <input id="authPasswordInput" type="password" placeholder="At least 6 characters" autocomplete="current-password" />
+          </label>
+          <div class="tracking-actions">
+            <button class="button" id="signUpBtn" type="button">Sign up</button>
+            <button class="button button-ghost" id="logInBtn" type="button">Log in</button>
+          </div>
+        </form>
+
+        <div class="auth-session" id="authSessionPanel" hidden>
+          <div class="study-sidebar-meta">
+            <span class="metric" id="authUserBadge">Signed out</span>
+            <span class="metric" id="cloudSyncBadge">Not synced</span>
+          </div>
+          <div class="tracking-actions">
+            <button class="button" id="pushCloudBtn" type="button">Sync now</button>
+            <button class="button button-ghost" id="pullCloudBtn" type="button">Pull cloud save</button>
+            <button class="button button-ghost" id="logOutBtn" type="button">Log out</button>
+          </div>
+        </div>
+      </section>
     </aside>
 
     <main class="main">
@@ -362,6 +395,7 @@
     </div>
   </dialog>
 
-  <script type="module" src="./app.js?v=3"></script>
+  <script src="./firebase-config.js?v=1"></script>
+  <script type="module" src="./app.js?v=4"></script>
 </body>
 </html>

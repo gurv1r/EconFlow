@@ -312,6 +312,21 @@ a {
   width: 100%;
 }
 
+.auth-form,
+.auth-session {
+  display: grid;
+  gap: 12px;
+}
+
+.auth-form .tracking-actions,
+.auth-session .tracking-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.auth-session .tracking-actions .button:last-child {
+  grid-column: 1 / -1;
+}
+
 .stats-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
