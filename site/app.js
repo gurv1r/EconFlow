@@ -708,6 +708,7 @@ function renderStats(stats) {
 }
 
 function applyFilters() {
+  const openState = captureOpenModuleState();
   const query = searchInput.value.trim().toLowerCase();
   const selectedYear = yearFilter.value;
   const selectedModuleId = moduleFilter.value;
@@ -720,12 +721,41 @@ function applyFilters() {
   });
 
   renderModules();
+  restoreOpenModuleState(openState);
   renderProgressSummary();
   renderSmartDashboard();
   renderTodayPlan();
   renderSpecMap();
   renderRecentNotes();
   renderMistakeList();
+}
+
+function captureOpenModuleState() {
+  return {
+    modules: [...moduleList.querySelectorAll(".module-card[data-module-id] .module-details[open]")]
+      .map((node) => node.closest(".module-card")?.dataset.moduleId)
+      .filter(Boolean),
+    sections: [...moduleList.querySelectorAll(".module-card[data-module-id] .section-card[open]")]
+      .map((node) => {
+        const moduleId = node.closest(".module-card")?.dataset.moduleId;
+        const sectionName = node.dataset.sectionName;
+        return moduleId && sectionName ? `${moduleId}::${sectionName}` : null;
+      })
+      .filter(Boolean),
+  };
+}
+
+function restoreOpenModuleState(openState) {
+  const openModules = new Set(openState?.modules || []);
+  const openSections = new Set(openState?.sections || []);
+  moduleList.querySelectorAll(".module-card[data-module-id]").forEach((card) => {
+    const moduleId = card.dataset.moduleId;
+    const details = card.querySelector(".module-details");
+    if (details) details.open = openModules.has(moduleId);
+    card.querySelectorAll(".section-card").forEach((sectionCard) => {
+      sectionCard.open = openSections.has(`${moduleId}::${sectionCard.dataset.sectionName}`);
+    });
+  });
 }
 
 function buildModuleHaystack(module) {
@@ -974,6 +1004,7 @@ function renderModules() {
   for (const module of modules) {
     const visibleTopics = module.topics.filter((topic) => topicMatchesSearch(topic));
     const node = moduleTemplate.content.firstElementChild.cloneNode(true);
+    node.dataset.moduleId = module.id;
     node.querySelector(".module-year").textContent = module.yearFolder;
     node.querySelector(".module-title").textContent = module.title;
     node.querySelector(".module-subtitle").textContent = `${module.course?.board?.name || "Board unknown"} | ${module.course?.name || "Course"}`;
@@ -1067,6 +1098,7 @@ function groupTopicsBySection(module, topics) {
 function renderSectionCard(section, topics) {
   const card = document.createElement("details");
   card.className = "section-card";
+  card.dataset.sectionName = section;
   const completedCount = topics.filter((topic) => getTopicProgress(topic).completed).length;
 
   const header = document.createElement("summary");
@@ -1102,6 +1134,7 @@ function renderSectionTopicButton(topic) {
   const progress = getTopicProgress(topic);
   const article = document.createElement("article");
   article.className = `section-topic-row${progress.completed ? " is-complete" : ""}`;
+  article.dataset.topicId = topic.id;
 
   const head = document.createElement("div");
   head.className = "section-topic-main";
@@ -1109,6 +1142,22 @@ function renderSectionTopicButton(topic) {
   const status = document.createElement("span");
   status.className = `topic-checkmark${progress.completed ? " is-complete" : progress.score >= 50 ? " is-progress" : ""}`;
   status.textContent = progress.completed ? "✓" : progress.score >= 50 ? "•" : "";
+
+  status.tabIndex = 0;
+  status.setAttribute("role", "checkbox");
+  status.setAttribute("aria-checked", progress.completed ? "true" : "false");
+  status.setAttribute("aria-label", `Mark ${topic.name} complete`);
+  status.title = progress.completed ? "Mark topic incomplete" : "Mark topic complete";
+  status.addEventListener("click", () => {
+    setTopicCompletion(topic, !getTopicProgress(topic).completed);
+    applyFilters();
+  });
+  status.addEventListener("keydown", (event) => {
+    if (event.key !== " " && event.key !== "Enter") return;
+    event.preventDefault();
+    setTopicCompletion(topic, !getTopicProgress(topic).completed);
+    applyFilters();
+  });
 
   const label = document.createElement("div");
   label.className = "section-topic-label";
@@ -1347,6 +1396,16 @@ function hasExplicitCoveredTopics() {
 
 function updateTopicCheck(topicId, key, value) {
   getTopicState(topicId).checks[key] = value;
+  saveProgress();
+}
+
+function setTopicCompletion(topic, completed) {
+  const topicState = getTopicState(topic.id);
+  topicState.checks.summary = completed && !!topic.summaryHtmlPath;
+  topicState.checks.videos = completed && topic.videos.length > 0;
+  topicState.checks.quizzes = completed && topic.quizzes.length > 0;
+  topicState.checks.articles = completed && topic.articleLessons.length > 0;
+  topicState.checks.confidence = completed;
   saveProgress();
 }
 
