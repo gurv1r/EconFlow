@@ -645,7 +645,7 @@ def caption_assets(media: dict):
     return results
 
 
-def export_video_lesson(module_dir: Path, section_name: str, subsection_name: str, subsection_number: int, lesson: dict, lesson_kind: str, manifest: list) -> None:
+def export_video_lesson(module_dir: Path, section_name: str, subsection_name: str, subsection_number: int, lesson: dict, lesson_kind: str, lesson_order: int, manifest: list) -> None:
     wistia_id = lesson.get("wistiaId")
     if not wistia_id:
         return
@@ -659,7 +659,10 @@ def export_video_lesson(module_dir: Path, section_name: str, subsection_name: st
     meta = wistia_metadata(wistia_id)
     write_json(video_dir / "wistia.json", meta)
     media = meta.get("media", {})
-    write_json(video_dir / "lesson.json", lesson)
+    lesson_payload = dict(lesson)
+    lesson_payload["displayOrder"] = lesson_order
+    lesson_payload["displayTitle"] = f"Video {lesson_order}: {lesson.get('title') or wistia_id}"
+    write_json(video_dir / "lesson.json", lesson_payload)
 
     title_html = html.escape(lesson.get("title") or wistia_id)
     body = [
@@ -899,19 +902,22 @@ def export_module(module: dict, manifest: list) -> dict:
     for section in sorted(module.get("sectionGroups") or [], key=lambda item: item.get("position") or 0):
         for subsection in sorted(section.get("subsections") or [], key=lambda item: item.get("subsectionNumber") or 0):
             section_manifest.append(export_subsection(module_dir, section, subsection))
+            lesson_order = 0
             for lesson in subsection.get("videoLessons") or []:
-                video_jobs.append((section["name"], subsection["name"], subsection["subsectionNumber"], lesson, "Video Lesson"))
+                lesson_order += 1
+                video_jobs.append((section["name"], subsection["name"], subsection["subsectionNumber"], lesson, "Video Lesson", lesson_order))
             for lesson in subsection.get("examHowToLessons") or []:
-                video_jobs.append((section["name"], subsection["name"], subsection["subsectionNumber"], lesson, "Exam How-To"))
+                lesson_order += 1
+                video_jobs.append((section["name"], subsection["name"], subsection["subsectionNumber"], lesson, "Exam How-To", lesson_order))
 
     video_errors = []
     manifest_lock = threading.Lock()
 
     def worker(job):
-        section_name, subsection_name, subsection_number, lesson, kind = job
+        section_name, subsection_name, subsection_number, lesson, kind, lesson_order = job
         try:
             local_manifest = []
-            export_video_lesson(module_dir, section_name, subsection_name, subsection_number, lesson, kind, local_manifest)
+            export_video_lesson(module_dir, section_name, subsection_name, subsection_number, lesson, kind, lesson_order, local_manifest)
             with manifest_lock:
                 manifest.extend(local_manifest)
         except Exception as exc:  # noqa: BLE001

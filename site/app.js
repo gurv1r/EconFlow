@@ -73,6 +73,13 @@ function archiveUrl(path) {
   return new URL(encoded, getArchiveRoot()).toString();
 }
 
+function getVideoLabel(video, fallbackIndex = null) {
+  const order = Number(video?.displayOrder);
+  if (Number.isFinite(order) && order > 0) return `Video ${order}`;
+  if (fallbackIndex != null) return `Video ${fallbackIndex + 1}`;
+  return "Video";
+}
+
 async function fetchChunk(url, offset, size = 1024 * 1024) {
   const safeOffset = Math.max(0, Number(offset) || 0);
   const safeSize = Math.max(1, Number(size) || 1024 * 1024);
@@ -1233,7 +1240,7 @@ function renderTopic(topic) {
   const videoList = node.querySelector(".video-list");
   for (const video of topic.videos) {
     videoList.append(
-      actionCard(video.title, video.kind, [
+      actionCard(video.displayTitle || video.title, video.kind, [
         { label: "Study video", action: () => openVideoStudy(topic, video) },
         video.htmlPath ? { label: "Lesson notes", action: () => openStudyHtml({ title: video.title, meta: `${topic.name} | Lesson notes`, path: video.htmlPath, notesKey: `videohtml:${video.htmlPath}`, topicId: topic.id, trackKey: "videos" }) } : null,
       ].filter(Boolean)),
@@ -1691,7 +1698,7 @@ function getTopicStudyResources(topic) {
     const resourceId = `video:${index}`;
     resources.push({
       id: resourceId,
-      label: `Video ${index + 1}`,
+      label: getVideoLabel(video, index),
       open: () => openVideoStudy(topic, video, buildTopicStudyActions(topic, resourceId)),
     });
   });

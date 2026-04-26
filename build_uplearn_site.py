@@ -37,6 +37,107 @@ def first_or_none(paths):
     return None
 
 
+def strip_video_dir_prefix(value: str) -> str:
+    return re.sub(r"^(Video Lesson|Exam How-To)\s*-\s*", "", value or "").strip()
+
+
+def normalize_video_value(value: str) -> str:
+    return slug((value or "").replace("&", "and"))
+
+
+def build_video_order_lookup(module: dict) -> dict:
+    lookup = {}
+    for section in sorted(module.get("sectionGroups") or [], key=lambda item: item.get("position") or 0):
+        for subsection in sorted(section.get("subsections") or [], key=lambda item: item.get("subsectionNumber") or 0):
+            subsection_number = subsection.get("subsectionNumber")
+            order = 0
+            for kind, lessons in (
+                ("Video Lesson", subsection.get("videoLessons") or []),
+                ("Exam How-To", subsection.get("examHowToLessons") or []),
+            ):
+                for lesson in lessons:
+                    order += 1
+                    entry = {
+                        "displayOrder": order,
+                        "title": (lesson.get("title") or "").strip(),
+                        "displayTitle": f"Video {order}: {(lesson.get('title') or '').strip()}".strip(": "),
+                    }
+                    for key in (
+                        ("uniqueCode", normalize_video_value(lesson.get("uniqueCode"))),
+                        ("wistiaId", normalize_video_value(lesson.get("wistiaId"))),
+                        ("title", normalize_video_value(lesson.get("title"))),
+                    ):
+                        if key[1]:
+                            lookup[(subsection_number, kind, key[0], key[1])] = entry
+    return lookup
+
+
+def resolve_video_metadata(video_order_lookup: dict, subsection_number: int, lesson_dir: Path):
+    lesson_json_path = lesson_dir / "lesson.json"
+    lesson_json = read_json(lesson_json_path) if lesson_json_path.exists() else {}
+    kind = "Exam How-To" if lesson_dir.name.startswith("Exam How-To") else "Video Lesson"
+    match = None
+    for field, raw_value in (
+        ("uniqueCode", lesson_json.get("uniqueCode")),
+        ("wistiaId", lesson_json.get("wistiaId")),
+        ("title", lesson_json.get("title")),
+    ):
+        normalized = normalize_video_value(raw_value)
+        if not normalized:
+            continue
+        match = video_order_lookup.get((subsection_number, kind, field, normalized))
+        if match:
+            break
+    display_order = lesson_json.get("displayOrder") or (match or {}).get("displayOrder")
+    base_title = (lesson_json.get("title") or (match or {}).get("title") or strip_video_dir_prefix(lesson_dir.name)).strip()
+    display_title = lesson_json.get("displayTitle") or (match or {}).get("displayTitle") or (f"Video {display_order}: {base_title}" if display_order else base_title)
+    return {
+        "lessonJson": lesson_json,
+        "displayOrder": display_order,
+        "title": base_title,
+        "displayTitle": display_title,
+        "kind": kind,
+    }
+
+
+def sync_archive_video_metadata():
+    for module_dir in sorted(ARCHIVE.glob("Year */*")):
+        if not module_dir.is_dir():
+            continue
+        module_json = module_dir / "module.json"
+        if not module_json.exists():
+            continue
+        module = read_json(module_json)
+        video_order_lookup = build_video_order_lookup(module)
+        topics_root = module_dir / "Topics"
+        if not topics_root.exists():
+            continue
+        for section_dir in sorted(p for p in topics_root.iterdir() if p.is_dir()):
+            for topic_dir in sorted(p for p in section_dir.iterdir() if p.is_dir()):
+                subsection_json = topic_dir / "subsection.json"
+                if not subsection_json.exists():
+                    continue
+                subsection = read_json(subsection_json)
+                subsection_number = subsection.get("subsectionNumber")
+                video_root = module_dir / "Videos" / topic_dir.name
+                if not video_root.exists():
+                    continue
+                for lesson_dir in sorted(p for p in video_root.iterdir() if p.is_dir()):
+                    lesson_json_path = lesson_dir / "lesson.json"
+                    if not lesson_json_path.exists():
+                        continue
+                    lesson_json = read_json(lesson_json_path)
+                    metadata = resolve_video_metadata(video_order_lookup, subsection_number, lesson_dir)
+                    updates = {}
+                    if metadata["displayOrder"] and lesson_json.get("displayOrder") != metadata["displayOrder"]:
+                        updates["displayOrder"] = metadata["displayOrder"]
+                    if metadata["displayTitle"] and lesson_json.get("displayTitle") != metadata["displayTitle"]:
+                        updates["displayTitle"] = metadata["displayTitle"]
+                    if updates:
+                        lesson_json.update(updates)
+                        lesson_json_path.write_text(json.dumps(lesson_json, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
 def build_catalog():
     summary = read_json(ARCHIVE / "summary.json")
     modules = []
@@ -58,6 +159,7 @@ def build_catalog():
         if not module_json.exists():
             continue
         module = read_json(module_json)
+        video_order_lookup = build_video_order_lookup(module)
         module_id = str(module["id"])
         module_entry = {
             "id": module_id,
@@ -181,12 +283,16 @@ def build_catalog():
 
                     video_root = module_dir / "Videos" / topic_dir.name
                     if video_root.exists():
+                        video_entries = []
                         for lesson_dir in sorted(p for p in video_root.iterdir() if p.is_dir()):
+                            metadata = resolve_video_metadata(video_order_lookup, subsection.get("subsectionNumber"), lesson_dir)
                             video_path = first_or_none(lesson_dir.glob("video.*"))
-                            topic_entry["videos"].append(
+                            video_entries.append(
                                 {
-                                    "title": re.sub(r"^(Video Lesson|Exam How-To)\s*-\s*", "", lesson_dir.name),
-                                    "kind": "Exam How-To" if lesson_dir.name.startswith("Exam How-To") else "Video Lesson",
+                                    "title": metadata["title"],
+                                    "displayTitle": metadata["displayTitle"],
+                                    "displayOrder": metadata["displayOrder"],
+                                    "kind": metadata["kind"],
                                     "folder": rel(lesson_dir),
                                     "videoPath": rel(video_path) if video_path else None,
                                     "htmlPath": rel(lesson_dir / "index.html") if (lesson_dir / "index.html").exists() else None,
@@ -195,6 +301,15 @@ def build_catalog():
                                 }
                             )
                             stats["videos"] += 1
+                        topic_entry["videos"].extend(
+                            sorted(
+                                video_entries,
+                                key=lambda item: (
+                                    item.get("displayOrder") if item.get("displayOrder") is not None else 9999,
+                                    item.get("title") or "",
+                                ),
+                            )
+                        )
 
                     module_entry["topics"].append(topic_entry)
 
@@ -214,5 +329,6 @@ def write_catalog():
 
 
 if __name__ == "__main__":
+    sync_archive_video_metadata()
     write_catalog()
     print(f"Catalog written to {SITE / 'catalog.json'}")
