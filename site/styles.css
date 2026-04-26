@@ -212,6 +212,30 @@ a {
   color: #4ade80;
 }
 
+.breadcrumb-nav {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.breadcrumb-link {
+  color: #4ade80;
+  text-decoration: none;
+  cursor: pointer;
+  transition: opacity 200ms ease;
+}
+
+.breadcrumb-link:hover {
+  opacity: 0.7;
+  text-decoration: underline;
+}
+
+.breadcrumb-separator {
+  color: var(--ink-soft);
+  margin: 0 4px;
+}
+
 .search-panel,
 .stats-grid,
 .tracking-actions,
@@ -356,8 +380,8 @@ a {
   align-items: stretch;
 }
 
-.topic-actions > *,
-.hero-actions > * {
+.topic-actions>*,
+.hero-actions>* {
   flex: 1 1 auto;
   text-align: center;
 }
@@ -442,7 +466,7 @@ a {
 .study-layout {
   margin-top: 16px;
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(340px, 1fr);
+  grid-template-columns: minmax(0, 1.3fr) minmax(420px, 1fr);
   gap: 24px;
   align-items: start;
 }
@@ -474,11 +498,11 @@ a {
   line-height: 1.7;
 }
 
-.study-html > :first-child {
+.study-html> :first-child {
   margin-top: 0;
 }
 
-.study-html > :last-child {
+.study-html> :last-child {
   margin-bottom: 0;
 }
 
@@ -491,7 +515,7 @@ a {
 
 .study-notes {
   resize: vertical;
-  min-height: 260px;
+  min-height: 400px;
 }
 
 .spec-map-card,
@@ -618,6 +642,25 @@ a {
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 18px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.module-details-head::-webkit-details-marker {
+  display: none;
+}
+
+.module-details-head::after {
+  content: "▼";
+  font-size: 0.9em;
+  color: var(--brand);
+  transition: transform 0.2s ease;
+  align-self: center;
+  margin-left: 8px;
+}
+
+details[open] > .module-details-head::after {
+  transform: rotate(180deg);
 }
 
 .module-details-title {
@@ -711,6 +754,23 @@ a {
   padding: 18px 18px 16px;
   cursor: pointer;
   list-style: none;
+}
+
+.section-card-head::-webkit-details-marker {
+  display: none;
+}
+
+.section-card-head::after {
+  content: "▼";
+  font-size: 0.85em;
+  color: var(--muted);
+  transition: transform 0.2s ease;
+  align-self: center;
+  margin-left: 8px;
+}
+
+details[open] > .section-card-head::after {
+  transform: rotate(180deg);
 }
 
 .section-card-title {
@@ -924,7 +984,7 @@ a {
   border-bottom-right-radius: 16px;
 }
 
-.dashboard-details > :not(summary) {
+.dashboard-details> :not(summary) {
   margin-top: 18px;
 }
 
@@ -1121,6 +1181,7 @@ a {
 }
 
 @media (max-width: 760px) {
+
   .app-header-inner,
   .page-shell {
     padding-left: 16px;

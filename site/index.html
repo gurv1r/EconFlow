@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>UpLearn Economics Archive</title>
+  <title>UpLearn Economics Study Dashboard</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2314213d'/%3E%3Cpath d='M17 18h30v6H17zm0 11h30v6H17zm0 11h20v6H17z' fill='%23fca311'/%3E%3C/svg%3E" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -109,6 +109,7 @@
         </div>
         <div class="hero-actions">
           <a class="button" href="#moduleList">Browse modules</a>
+          <button class="button button-ghost" id="resumeStudyBtn" type="button" hidden disabled>Resume last study</button>
           <a class="button" href="../archive/UpLearn%20Economics/README.md" target="_blank" rel="noreferrer">Open Archive README</a>
           <a class="button button-ghost" href="./catalog.json" target="_blank" rel="noreferrer">Open Catalog JSON</a>
         </div>
@@ -117,7 +118,7 @@
       <section class="results-header">
         <div>
           <p class="eyebrow">Modules</p>
-          <h3 id="resultTitle">Loading archive…</h3>
+          <h3 id="resultTitle">Loading archive...</h3>
         </div>
         <p id="resultMeta" class="result-meta"></p>
       </section>
@@ -130,7 +131,7 @@
       <section class="results-header progress-header">
         <div>
           <p class="eyebrow">Revision Tracking</p>
-          <h3 id="progressTitle">Preparing progress summary…</h3>
+          <h3 id="progressTitle">Preparing progress summary...</h3>
         </div>
         <p id="progressMeta" class="result-meta"></p>
       </section>
@@ -138,7 +139,7 @@
       <section class="planner-grid">
         <article class="planner-card">
           <p class="eyebrow">Due Now</p>
-          <h3 id="dueTitle">Loading spaced review…</h3>
+          <h3 id="dueTitle">Loading spaced review...</h3>
           <p id="dueMeta" class="result-meta"></p>
           <div class="hero-actions">
             <button class="button" id="startDueReviewBtn" type="button">Start due flashcards</button>
@@ -147,7 +148,7 @@
         </article>
         <article class="planner-card">
           <p class="eyebrow">Smart Focus</p>
-          <h3 id="focusTitle">Finding weak spots…</h3>
+          <h3 id="focusTitle">Finding weak spots...</h3>
           <p id="focusMeta" class="result-meta"></p>
           <div class="hero-actions">
             <button class="button button-ghost" id="focusWeakTopicsBtn" type="button">Open weak topics</button>
@@ -170,7 +171,7 @@
         <div class="today-head">
           <div>
             <p class="eyebrow">Today</p>
-            <h3 id="todayTitle">Building your study order…</h3>
+            <h3 id="todayTitle">Building your study order...</h3>
             <p id="todayMeta" class="result-meta"></p>
           </div>
           <div class="hero-actions">
@@ -184,7 +185,7 @@
         <div class="today-head">
           <div>
             <p class="eyebrow">Specification Map</p>
-            <h3 id="specMapTitle">Loading Edexcel theme map…</h3>
+            <h3 id="specMapTitle">Loading Edexcel theme map...</h3>
             <p id="specMapMeta" class="result-meta"></p>
           </div>
         </div>
@@ -269,14 +270,14 @@
       </div>
       <div class="progress-bar"><div class="progress-fill"></div></div>
       <div class="module-stats"></div>
-      <section class="module-details">
-        <div class="module-details-head">
+      <details class="module-details">
+        <summary class="module-details-head">
           <div>
             <p class="eyebrow">Browse Content</p>
             <h5 class="module-details-title">Direct access to sections, topics, videos, and quizzes</h5>
           </div>
           <div class="module-quick-actions"></div>
-        </div>
+        </summary>
         <div class="module-details-layout">
           <section class="module-primary-panel">
             <div class="topic-list"></div>
@@ -298,7 +299,7 @@
             </details>
           </aside>
         </div>
-      </section>
+      </details>
     </article>
   </template>
 

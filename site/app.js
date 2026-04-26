@@ -58,6 +58,7 @@ function archiveUrl(path) {
 const searchInput = document.getElementById("searchInput");
 const yearFilter = document.getElementById("yearFilter");
 const moduleFilter = document.getElementById("moduleFilter");
+const resumeStudyBtn = document.getElementById("resumeStudyBtn");
 const studyStageSelect = document.getElementById("studyStageSelect");
 const coveredOnlyToggle = document.getElementById("coveredOnlyToggle");
 const allowFutureToggle = document.getElementById("allowFutureToggle");
@@ -146,32 +147,46 @@ async function boot() {
   bindEvents();
   renderStats(state.catalog.stats);
   applyFilters();
+  updateResumeStudyButton();
 }
 
 function setupNavSync() {
   const links = document.querySelectorAll(".app-nav-link");
   const sections = [
     { id: "resultTitle", el: document.getElementById("moduleList") },
-    { id: "todayTitle", el: document.getElementById("todayPlanList") },
-    { id: "studyTitle", el: document.getElementById("studyContent") }
+    { id: "todayTitle", el: document.querySelector(".today-card") },
+    { id: "studyTitle", el: document.querySelector(".study-layout") }
   ];
-  const observer = new IntersectionObserver((entries) => {
-    entries.forEach(entry => {
-      if (entry.isIntersecting) {
-        const match = sections.find(s => s.el === entry.target);
-        if (match) {
-          links.forEach(link => {
-            if (link.getAttribute("href") === `#${match.id}`) {
-              link.classList.add("is-active");
-            } else {
-              link.classList.remove("is-active");
-            }
-          });
+
+  function updateNav() {
+    let currentId = "resultTitle";
+    let minTop = Infinity;
+
+    sections.forEach(s => {
+      if (!s.el) return;
+      const rect = s.el.getBoundingClientRect();
+      if (rect.top <= 180 && rect.bottom > 180) {
+        currentId = s.id;
+      } else if (rect.top > 0 && rect.top < minTop) {
+        minTop = rect.top;
+        if (rect.top < window.innerHeight * 0.6) {
+          currentId = s.id;
         }
       }
     });
-  }, { threshold: 0.05, rootMargin: "-20% 0px -40% 0px" });
-  sections.forEach(s => { if (s.el) observer.observe(s.el); });
+
+    links.forEach(link => {
+      if (link.getAttribute("href") === `#${currentId}`) {
+        link.classList.add("is-active");
+      } else {
+        link.classList.remove("is-active");
+      }
+    });
+  }
+
+  window.addEventListener("scroll", updateNav, { passive: true });
+  // Initial sync
+  updateNav();
 }
 
 function bindEvents() {
@@ -186,6 +201,7 @@ function bindEvents() {
   exportProgressBtn.addEventListener("click", exportProgress);
   importProgressInput.addEventListener("change", importProgress);
   resetProgressBtn.addEventListener("click", resetProgress);
+  resumeStudyBtn?.addEventListener("click", restoreLastStudy);
 
   startDueReviewBtn.addEventListener("click", () => startFlashcardSession("due"));
   startMixedReviewBtn.addEventListener("click", () => startFlashcardSession("mixed"));
@@ -230,6 +246,7 @@ function createEmptyProgress() {
     noteIndex: {},
     examPapers: {},
     quizReviews: {},
+    lastStudy: null,
     preferences: {
       stage: "as",
       coveredOnly: true,
@@ -247,6 +264,7 @@ function normalizeProgress() {
   state.progress.noteIndex ??= {};
   state.progress.examPapers ??= {};
   state.progress.quizReviews ??= {};
+  state.progress.lastStudy ??= null;
   state.progress.preferences ??= {};
   state.progress.preferences.stage ??= "as";
   state.progress.preferences.coveredOnly ??= true;
@@ -256,6 +274,61 @@ function normalizeProgress() {
 function saveProgress() {
   state.progress.updatedAt = new Date().toISOString();
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.progress));
+}
+
+function updateResumeStudyButton() {
+  if (!resumeStudyBtn) return;
+  const lastStudy = state.progress.lastStudy;
+  if (!lastStudy?.type) {
+    resumeStudyBtn.hidden = true;
+    resumeStudyBtn.disabled = true;
+    resumeStudyBtn.removeAttribute("title");
+    return;
+  }
+  resumeStudyBtn.hidden = false;
+  resumeStudyBtn.disabled = false;
+  resumeStudyBtn.textContent = "Resume last study";
+  resumeStudyBtn.title = [lastStudy.title, lastStudy.meta].filter(Boolean).join(" | ");
+}
+
+async function restoreLastStudy() {
+  const lastStudy = state.progress.lastStudy;
+  if (!lastStudy?.type) return;
+
+  if (lastStudy.type === "paper") {
+    const foundPaper = findPaperByJsonPath(lastStudy.paperJsonPath);
+    if (foundPaper) {
+      await openExamPaperStudy(foundPaper.module, foundPaper.paper);
+      return;
+    }
+  }
+
+  if (lastStudy.type === "video") {
+    const topic = findTopicById(lastStudy.topicId);
+    const video = topic?.videos.find((item) =>
+      item.videoPath === lastStudy.videoPath ||
+      item.htmlPath === lastStudy.htmlPath,
+    );
+    if (topic && video) {
+      await openVideoStudy(topic, video);
+      return;
+    }
+  }
+
+  if (lastStudy.type === "html" && lastStudy.path) {
+    await openStudyHtml({
+      title: lastStudy.title,
+      meta: lastStudy.meta,
+      path: lastStudy.path,
+      notesKey: lastStudy.notesKey,
+      topicId: lastStudy.topicId,
+      trackKey: lastStudy.trackKey,
+      reopenRef: lastStudy,
+    });
+    return;
+  }
+
+  alert("That saved study resource is no longer available in the current catalog.");
 }
 
 function syncPreferenceControls() {
@@ -656,11 +729,11 @@ function groupTopicsBySection(module, topics) {
 }
 
 function renderSectionCard(section, topics) {
-  const card = document.createElement("article");
+  const card = document.createElement("details");
   card.className = "section-card";
   const completedCount = topics.filter((topic) => getTopicProgress(topic).completed).length;
 
-  const header = document.createElement("div");
+  const header = document.createElement("summary");
   header.className = "section-card-head";
   const title = document.createElement("h5");
   title.className = "section-card-title";
@@ -1257,7 +1330,39 @@ async function openVideoStudy(topic, video, extraActions = []) {
     player.controls = true;
     player.preload = "metadata";
     player.addEventListener("play", () => markTopicTouch(topic.id, "videos"));
-    player.addEventListener("error", () => {
+    player.addEventListener("error", async () => {
+      if (video.wistiaPath) {
+        try {
+          const wistiaData = await fetchJson(video.wistiaPath);
+          if (wistiaData && wistiaData.media && wistiaData.media.hashedId) {
+            const hashedId = wistiaData.media.hashedId;
+            const iframe = document.createElement("iframe");
+            iframe.src = `https://fast.wistia.net/embed/iframe/${hashedId}?videoFoam=true`;
+            iframe.allowTransparency = "true";
+            iframe.frameBorder = "0";
+            iframe.scrolling = "no";
+            iframe.className = "wistia_embed";
+            iframe.name = "wistia_embed";
+            iframe.allowFullscreen = true;
+            iframe.style.width = "100%";
+            iframe.style.height = "100%";
+            iframe.style.minHeight = "400px";
+            iframe.style.borderRadius = "18px";
+
+            const script = document.createElement("script");
+            script.src = "https://fast.wistia.net/assets/external/E-v1.js";
+            script.async = true;
+
+            const container = document.createElement("div");
+            container.append(iframe, script);
+            player.replaceWith(container);
+            return;
+          }
+        } catch (e) {
+          console.error("Wistia fallback failed", e);
+        }
+      }
+
       const fallback = document.createElement("div");
       fallback.className = "empty-state";
       fallback.style.background = "var(--surface-alt)";
@@ -1453,17 +1558,27 @@ async function openExamPaperStudy(module, paper) {
 
 function setStudySession(session) {
   state.studySession = session;
-  let breadcrumb = "Study Workspace";
-  if (session.topicId) {
-    const topic = findTopicById(session.topicId);
-    const module = topic ? findModuleByTopicId(session.topicId) : null;
-    if (module && topic) {
-      breadcrumb = `${module.title} — ${topic.section} — ${topic.name}`;
-    }
-  }
   const eyebrow = studyTitle.previousElementSibling;
   if (eyebrow && eyebrow.classList.contains("eyebrow")) {
-    eyebrow.textContent = breadcrumb;
+    if (session.topicId) {
+      const topic = findTopicById(session.topicId);
+      const module = topic ? findModuleByTopicId(session.topicId) : null;
+      if (module && topic) {
+        eyebrow.innerHTML = `
+          <nav class="breadcrumb-nav">
+            <a href="#moduleList" class="breadcrumb-link" onclick="document.getElementById('moduleList')?.scrollIntoView({behavior:'smooth'})">${escapeHtml(module.title)}</a>
+            <span class="breadcrumb-separator">/</span>
+            <span class="breadcrumb-text" style="color: var(--ink-soft);">${escapeHtml(topic.section)}</span>
+            <span class="breadcrumb-separator">/</span>
+            <span class="breadcrumb-text" style="color: var(--ink); font-weight: 700;">${escapeHtml(topic.name)}</span>
+          </nav>
+        `;
+      } else {
+        eyebrow.textContent = "Study Workspace";
+      }
+    } else {
+      eyebrow.textContent = "Study Workspace";
+    }
   }
   studyTitle.textContent = session.title;
   studyMeta.textContent = session.meta;
@@ -1477,6 +1592,16 @@ function setStudySession(session) {
   bindNotesToSession(session);
   renderSpecFocus(session);
   renderPaperSidebar();
+  if (session.reopenRef) {
+    state.progress.lastStudy = {
+      ...session.reopenRef,
+      title: session.title,
+      meta: session.meta,
+      savedAt: new Date().toISOString(),
+    };
+    saveProgress();
+    updateResumeStudyButton();
+  }
   scrollStudyWorkspaceIntoView();
 }
 
@@ -2364,6 +2489,7 @@ function importProgress(event) {
       seedFlashcards();
       saveProgress();
       applyFilters();
+      updateResumeStudyButton();
     } catch {
       alert("That file could not be imported.");
     }
@@ -2380,6 +2506,7 @@ function resetProgress() {
   seedFlashcards();
   saveProgress();
   applyFilters();
+  updateResumeStudyButton();
 }
 
 function average(values) {
