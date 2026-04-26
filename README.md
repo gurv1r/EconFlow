@@ -10,6 +10,7 @@ A local study dashboard for an exported UpLearn Economics archive. The app turns
 - `launch_uplearn_site.ps1` starts the local server and opens the dashboard in Chrome.
 - `build_uplearn_site.py` and `uplearn_econ_export.py` are helper scripts for rebuilding or exporting the catalog/site.
 - `selenium_audit.py` and `full_selenium_walkthrough.py` are browser audit scripts used during testing.
+- `agents-descriptor.md` gives future coding agents the architecture, commands, caveats, and safety notes for this app.
 
 ## Local Usage
 
