@@ -1892,6 +1892,29 @@ async function openExamPaperStudy(module, paper) {
   renderPaperSidebar(paper, paperData, paperState);
 }
 
+function clearStudyWorkspace() {
+  state.studySession = null;
+  const eyebrow = studyTitle.previousElementSibling;
+  if (eyebrow && eyebrow.classList.contains("eyebrow")) {
+    eyebrow.textContent = "Study Workspace";
+  }
+  studyTitle.textContent = "Choose a topic, quiz, video, or paper";
+  studyMeta.textContent = "This is where you should spend most of your revision time.";
+  studyActions.innerHTML = "";
+  studyContent.innerHTML = `<div class="empty-state">Open a Today step, a topic study action, a quiz, or an exam paper to load it here.</div>`;
+  notesTitle.textContent = "No resource selected";
+  notesMeta.textContent = "Notes save automatically and count toward your revision tracking.";
+  studyNotes.value = "";
+  notesSavedState.textContent = "Not saved yet";
+  notesCount.textContent = "0 chars";
+  specTitle.textContent = "No resource selected";
+  specMeta.textContent = "Open a topic, video, quiz, or paper to see the theme focus and exam guidance.";
+  specTags.innerHTML = "";
+  specChecklist.innerHTML = "";
+  notePrompt.textContent = "";
+  renderPaperSidebar();
+}
+
 function setStudySession(session) {
   state.studySession = session;
   const eyebrow = studyTitle.previousElementSibling;
@@ -1923,6 +1946,7 @@ function setStudySession(session) {
     if (action.href) studyActions.append(linkPill(action.href, action.label));
     else if (action.action) studyActions.append(buttonPill(action.label, action.action));
   }
+  studyActions.append(buttonPill("Close workspace", clearStudyWorkspace));
   studyContent.innerHTML = "";
   studyContent.append(session.content);
   bindNotesToSession(session);
@@ -2263,7 +2287,8 @@ function renderQuizStudyQuestion(entry, index) {
   card.className = "quiz-study-card";
 
   const definition = entry.quizContent?.quizDefinition?.questions?.[0] || null;
-  const prompt = stripHtml(definition?.question || entry.question || definition?.description || "").trim() || `Question ${index + 1}`;
+  const rawPrompt = definition?.question || entry.question || definition?.description || `Question ${index + 1}`;
+  const promptHtml = definition ? formatQuizPromptHtml({raw: definition}) : sanitizeRichText(rawPrompt);
   const marks = entry.quizContent?.marks || 0;
 
   const top = document.createElement("div");
@@ -2271,7 +2296,7 @@ function renderQuizStudyQuestion(entry, index) {
   top.innerHTML = `
     <div>
       <p class="eyebrow">Question ${index + 1}</p>
-      <h4>${escapeHtml(prompt)}</h4>
+      <div class="study-html" style="font-size: 1.1rem; font-weight: 500;">${promptHtml}</div>
     </div>
     <span class="metric">${marks} mark${marks === 1 ? "" : "s"}</span>
   `;
@@ -2290,7 +2315,7 @@ function renderQuizStudyQuestion(entry, index) {
     (definition.options || []).forEach((option, optionIndex) => {
       const item = document.createElement("li");
       item.className = `quiz-study-option${definition.correctOptionIndex === optionIndex ? " is-correct" : ""}`;
-      item.innerHTML = `<strong>${escapeHtml(option.text || `Option ${optionIndex + 1}`)}</strong>`;
+      item.innerHTML = `<strong>${sanitizeRichText(option.text || `Option ${optionIndex + 1}`)}</strong>`;
       if (option.explanation) {
         const explanation = document.createElement("div");
         explanation.className = "quiz-study-explanation";
@@ -2303,7 +2328,13 @@ function renderQuizStudyQuestion(entry, index) {
   } else {
     const raw = document.createElement("div");
     raw.className = "study-html";
-    raw.innerHTML = `<p>${escapeHtml(formatQuizTypeLabel(definition?.__typename || entry.questionType || "Question"))}</p>`;
+    let extraHtml = "";
+    if (definition?.explanation?.text) {
+      extraHtml = `<div class="quiz-study-explanation" style="margin-top: 1rem;"><strong>Explanation:</strong> ${sanitizeRichText(definition.explanation.text)}</div>`;
+    } else if (definition?.modelAnswer) {
+      extraHtml = `<div class="quiz-study-explanation" style="margin-top: 1rem;"><strong>Model Answer:</strong> ${sanitizeRichText(definition.modelAnswer)}</div>`;
+    }
+    raw.innerHTML = `<p class="metric" style="margin-bottom: 0.5rem; display: inline-block;">${escapeHtml(formatQuizTypeLabel(definition?.__typename || entry.questionType || "Question"))}</p>${extraHtml}`;
     card.append(raw);
   }
 
@@ -2450,7 +2481,7 @@ function renderMultipleChoice(question, answerState, multi) {
       renderQuiz();
     });
     const text = document.createElement("div");
-    text.innerHTML = `<strong>${escapeHtml(option.text || `Option ${index + 1}`)}</strong>${option.explanation ? `<span> ${sanitizeRichText(option.explanation)}</span>` : ""}`;
+    text.innerHTML = `<strong>${sanitizeRichText(option.text || `Option ${index + 1}`)}</strong>`;
     label.append(input, text);
     container.append(label);
   });
