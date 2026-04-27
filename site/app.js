@@ -82,6 +82,37 @@ function getVideoLabel(video, fallbackIndex = null) {
   return title ? `Video - ${title}` : "Video";
 }
 
+function getQuizBaseTitle(quiz) {
+  return String(quiz?.title || "").replace(/^Quiz:\s*/i, "").trim() || "Quiz";
+}
+
+function getQuizIndex(topic, quiz, fallbackIndex = null) {
+  const index = topic?.quizzes?.findIndex((candidate) => candidate.jsonPath === quiz?.jsonPath) ?? -1;
+  return index >= 0 ? index : fallbackIndex;
+}
+
+function getQuizDuplicateIndex(topic, quiz) {
+  const baseTitle = getQuizBaseTitle(quiz).toLowerCase();
+  const matches = (topic?.quizzes || []).filter((candidate) => getQuizBaseTitle(candidate).toLowerCase() === baseTitle);
+  if (matches.length <= 1) return null;
+  const position = matches.findIndex((candidate) => candidate.jsonPath === quiz?.jsonPath);
+  return position >= 0 ? { position: position + 1, total: matches.length } : null;
+}
+
+function getQuizLabel(topic, quiz, fallbackIndex = null) {
+  const index = getQuizIndex(topic, quiz, fallbackIndex);
+  const prefix = index != null && index >= 0 ? `Quiz ${index + 1}` : "Quiz";
+  const baseTitle = getQuizBaseTitle(quiz);
+  const duplicate = getQuizDuplicateIndex(topic, quiz);
+  const duplicateSuffix = duplicate ? ` (set ${duplicate.position})` : "";
+  return `${prefix} - ${baseTitle}${duplicateSuffix}`;
+}
+
+function getQuizMetricLabel(topic, quiz, fallbackIndex = null) {
+  const questionLabel = `${quiz.questionCount} question${quiz.questionCount === 1 ? "" : "s"}`;
+  return `${getQuizLabel(topic, quiz, fallbackIndex)} | ${questionLabel}`;
+}
+
 function getVideoIdentity(video) {
   return `${video?.videoPath || ""}::${video?.htmlPath || ""}::${video?.title || ""}`;
 }
@@ -1061,7 +1092,7 @@ function buildTodayPlan() {
 
   if (quizTarget && plan.length < 4) {
     plan.push({
-      title: `Retry ${quizTarget.quiz.title}`,
+      title: `Retry ${getQuizLabel(quizTarget.topic, quizTarget.quiz)}`,
       subtitle: `${quizTarget.topic.name} | best score ${getQuizProgress(quizTarget.quiz.jsonPath).bestScore || 0}%`,
       cta: "Practice quiz",
       action: () => openQuiz(quizTarget.topic, quizTarget.quiz),
@@ -1368,10 +1399,10 @@ function renderTopic(topic) {
   checks.append(renderTopicCheck(topic, "confidence", "Confident on this topic", true));
 
   const quizList = node.querySelector(".quiz-list");
-  for (const quiz of topic.quizzes) {
+  for (const [quizIndex, quiz] of topic.quizzes.entries()) {
     const progress = getQuizProgress(quiz.jsonPath);
     quizList.append(
-      actionCard(quiz.title, `${quiz.questionCount} questions | ${progress.completed ? "completed" : progress.lastScore ? `${progress.lastScore}% best` : "not started"}`, [
+      actionCard(getQuizLabel(topic, quiz, quizIndex), `${quiz.questionCount} questions | ${progress.completed ? "completed" : progress.lastScore ? `${progress.lastScore}% best` : "not started"}`, [
         { label: "Practice", action: () => openQuiz(topic, quiz) },
         { label: "Review notes", action: () => openQuizStudyNotes(topic, quiz) },
         quiz.assetFolder ? { label: "Assets", href: archiveUrl(quiz.assetFolder) } : null,
@@ -1847,9 +1878,12 @@ function getTopicStudyResources(topic) {
 
   topic.quizzes.forEach((quiz, index) => {
     const resourceId = `quiz:${index}`;
+    const quizLabel = getQuizMetricLabel(topic, quiz, index);
     resources.push({
       id: resourceId,
-      label: `Quiz notes ${index + 1}`,
+      label: `${quizLabel} notes`,
+      practiceLabel: quizLabel,
+      practice: () => openQuiz(topic, quiz),
       open: () => openQuizStudyNotes(topic, quiz, buildTopicStudyActions(topic, resourceId)),
     });
   });
@@ -1858,10 +1892,20 @@ function getTopicStudyResources(topic) {
 }
 
 function buildTopicStudyActions(topic, currentId) {
-  return getTopicStudyResources(topic).map((resource) => ({
-    label: resource.id === currentId ? `Viewing: ${resource.label}` : resource.label,
-    action: () => resource.open(),
-  }));
+  const actions = [];
+  for (const resource of getTopicStudyResources(topic)) {
+    if (resource.practice && resource.practiceLabel) {
+      actions.push({
+        label: `Practice: ${resource.practiceLabel}`,
+        action: () => resource.practice(),
+      });
+    }
+    actions.push({
+      label: resource.id === currentId ? `Viewing: ${resource.label}` : resource.label,
+      action: () => resource.open(),
+    });
+  }
+  return actions;
 }
 
 async function openVideoStudy(topic, video, extraActions = []) {
@@ -1972,13 +2016,13 @@ async function openQuizStudyNotes(topic, quiz, extraActions = []) {
   const content = renderQuizStudyNotes(topic, quiz, quizData);
   setStudySession({
     kind: "html",
-    title: quiz.title,
+    title: getQuizLabel(topic, quiz),
     meta: `${topic.name} | Quiz notes and explanation`,
     notesKey: `topic:${topic.id}:quiznotes:${quiz.jsonPath}`,
     topicId: topic.id,
     reopenRef: {
       type: "html",
-      title: quiz.title,
+      title: getQuizLabel(topic, quiz),
       meta: `${topic.name} | Quiz notes and explanation`,
       path: quiz.htmlPath || quiz.jsonPath,
       notesKey: `topic:${topic.id}:quiznotes:${quiz.jsonPath}`,
@@ -2487,7 +2531,7 @@ function renderQuizStudyNotes(topic, quiz, quizData) {
   const quizType = (quizData.quizType || "mixed").replaceAll("_", " ").toLowerCase();
   intro.innerHTML = `
     <p class="eyebrow">Quiz Review</p>
-    <h4>${escapeHtml(quiz.title)}</h4>
+    <h4>${escapeHtml(getQuizLabel(topic, quiz))}</h4>
     <div class="study-sidebar-meta">
       <span class="metric">${escapeHtml(topic.section)}</span>
       <span class="metric">${(quizData.progressQuizQuestions || []).length} questions</span>
@@ -2625,7 +2669,7 @@ function normalizeQuestion(question) {
 function renderQuiz() {
   const session = state.quizSession;
   if (!session) return;
-  quizTitle.textContent = session.quiz.title;
+  quizTitle.textContent = getQuizLabel(session.topic, session.quiz);
   renderQuizStatus(session);
 
   if (session.finished) {
@@ -2919,7 +2963,7 @@ function finishQuiz() {
     at: new Date().toISOString(),
     topicId: session.topic.id,
     quizPath: session.quiz.jsonPath,
-    quizTitle: session.quiz.title,
+    quizTitle: getQuizLabel(session.topic, session.quiz),
     score,
     pendingSelfMarkCount: pendingSelfMark.length,
     wrongByType,
