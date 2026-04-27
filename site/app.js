@@ -2529,9 +2529,7 @@ function renderQuizStudyQuestion(entry, index) {
   card.append(top);
 
   if (definition?.topImage) {
-    const image = document.createElement("img");
-    image.src = definition.topImage;
-    image.alt = "";
+    const image = createQuizImage(definition.topImage, "", "quiz-media");
     card.append(image);
   }
 
@@ -2541,11 +2539,13 @@ function renderQuizStudyQuestion(entry, index) {
     (definition.options || []).forEach((option, optionIndex) => {
       const item = document.createElement("li");
       item.className = `quiz-study-option${definition.correctOptionIndex === optionIndex ? " is-correct" : ""}`;
-      item.innerHTML = `<strong>${sanitizeRichText(option.text || `Option ${optionIndex + 1}`)}</strong>`;
+      item.innerHTML = `<strong>${escapeHtml(formatQuizText(option.text || "", quizChoiceLabel(optionIndex)))}</strong>`;
+      if (option.image) item.append(createQuizImage(option.image, formatQuizText(option.text || "", quizChoiceLabel(optionIndex)), "quiz-option-image"));
       if (option.explanation) {
         const explanation = document.createElement("div");
         explanation.className = "quiz-study-explanation";
         explanation.innerHTML = sanitizeRichText(option.explanation);
+        if (option.explanationImage) explanation.append(createQuizImage(option.explanationImage, "Option explanation", "quiz-explanation-image"));
         item.append(explanation);
       }
       options.append(item);
@@ -2615,6 +2615,7 @@ function normalizeQuestion(question) {
     id: String(question.id),
     order: question.questionNumber,
     marks: question.quizContent?.marks ?? 1,
+    stem: question.quizContent?.stem || "",
     explanation: definition?.explanation?.text || question.quizContent?.explanation || "",
     type: actual.__typename,
     raw: actual,
@@ -2624,18 +2625,20 @@ function normalizeQuestion(question) {
 function renderQuiz() {
   const session = state.quizSession;
   if (!session) return;
-  const progress = getQuizProgress(session.quiz.jsonPath);
   quizTitle.textContent = session.quiz.title;
-  quizScoreboard.innerHTML = "";
-  quizScoreboard.append(metric(`${progress.attempts} attempts`));
-  quizScoreboard.append(metric(`${progress.bestScore}% best score`));
-  quizScoreboard.append(metric(progress.completed ? "completed" : "in progress"));
+  renderQuizStatus(session);
 
   if (session.finished) {
+    const progress = getQuizProgress(session.quiz.jsonPath);
     const review = state.progress.quizReviews[session.quiz.jsonPath];
-    quizMeta.textContent = `${session.topic.name} | Attempt complete`;
+    const pending = review?.pendingSelfMarkCount || 0;
+    quizMeta.textContent = pending
+      ? `${session.topic.name} | Attempt complete - ${pending} self-mark item${pending === 1 ? "" : "s"} still pending`
+      : `${session.topic.name} | Attempt complete`;
     const wrongTypes = Object.entries(review?.wrongByType || {}).map(([type, count]) => `${type}: ${count}`).join(" | ");
-    quizQuestionMount.innerHTML = `<section class="quiz-question"><p class="eyebrow">Quiz complete</p><h4>${progress.lastScore}% this attempt</h4><p>${wrongTypes || "No wrong answers recorded."}</p><div class="study-html">${(review?.wrongPrompts || []).slice(0, 5).map((item) => `<p><strong>${escapeHtml(item.type)}</strong>: ${escapeHtml(item.prompt)}</p>`).join("") || "<p>Clean run.</p>"}</div></section>`;
+    const scoreLabel = pending ? `${progress.lastScore}% on auto/self-marked questions` : `${progress.lastScore}% this attempt`;
+    const pendingText = pending ? `<p>${pending} long-answer response${pending === 1 ? "" : "s"} still need self-marking. Retry the quiz to review them.</p>` : "";
+    quizQuestionMount.innerHTML = `<section class="quiz-question"><p class="eyebrow">Quiz complete</p><h4>${scoreLabel}</h4><p>${wrongTypes || "No wrong answers recorded."}</p>${pendingText}<div class="study-html">${(review?.wrongPrompts || []).slice(0, 5).map((item) => `<p><strong>${escapeHtml(item.type)}</strong>: ${escapeHtml(item.prompt)}</p>`).join("") || "<p>Clean run.</p>"}</div></section>`;
     prevQuizBtn.disabled = true;
     nextQuizBtn.textContent = "Retry quiz";
     return;
@@ -2645,18 +2648,23 @@ function renderQuiz() {
   quizMeta.textContent = `${session.topic.name} | Question ${session.index + 1} of ${session.questions.length}`;
   quizQuestionMount.innerHTML = "";
   quizQuestionMount.append(renderQuizQuestion(current));
-  prevQuizBtn.disabled = session.index === 0;
-  nextQuizBtn.textContent = session.index === session.questions.length - 1 ? "Finish quiz" : "Next";
+  syncQuizChrome();
 }
 
 function renderQuizQuestion(question) {
   const wrapper = document.createElement("section");
   wrapper.className = "quiz-question";
-  wrapper.innerHTML = `<p class="eyebrow">Question ${question.order}</p>`;
+  wrapper.innerHTML = `
+    <div class="quiz-question-head">
+      <p class="eyebrow">Question ${question.order}</p>
+      <span class="metric">${question.marks} mark${question.marks === 1 ? "" : "s"}</span>
+    </div>
+  `;
   const prompt = document.createElement("div");
   prompt.className = "quiz-prompt";
   prompt.innerHTML = formatQuizPromptHtml(question);
   wrapper.append(prompt);
+  appendQuizMedia(wrapper, collectQuestionImages(question), "Question diagram", "quiz-media");
   const mount = document.createElement("div");
   mount.className = "quiz-inputs";
   const answerState = state.quizSession.answers[question.id];
@@ -2672,10 +2680,10 @@ function renderQuizQuestion(question) {
   else mount.append(renderLongQuestion(question, answerState));
 
   wrapper.append(mount);
-  if (question.explanation) {
+  if (question.explanation && hasQuizAnswerValue(answerState)) {
     const hint = document.createElement("details");
     hint.className = "quiz-hint";
-    hint.innerHTML = `<summary>Reveal explanation</summary><div>${question.explanation}</div>`;
+    hint.innerHTML = `<summary>Why this answer?</summary><div>${sanitizeRichText(question.explanation)}</div>`;
     wrapper.append(hint);
   }
   return wrapper;
@@ -2691,7 +2699,7 @@ function renderMultipleChoice(question, answerState, multi) {
   const selectedValues = multi ? new Set(answerState?.value || []) : answerState?.value;
   options.forEach((option, index) => {
     const label = document.createElement("label");
-    label.className = "option-card";
+    label.className = buildOptionCardClass(question, answerState, index, multi);
     const input = document.createElement("input");
     input.type = multi ? "checkbox" : "radio";
     input.name = `quiz-${question.id}`;
@@ -2707,7 +2715,18 @@ function renderMultipleChoice(question, answerState, multi) {
       renderQuiz();
     });
     const text = document.createElement("div");
-    text.innerHTML = `<strong>${sanitizeRichText(option.text || `Option ${index + 1}`)}</strong>`;
+    text.className = "option-copy";
+    text.innerHTML = `<strong>${escapeHtml(formatQuizText(option.text || "", quizChoiceLabel(index)))}</strong>`;
+    if (option.image) text.append(createQuizImage(option.image, formatQuizText(option.text || "", quizChoiceLabel(index)), "quiz-option-image"));
+    if (shouldShowOptionExplanation(question, answerState, index, multi)) {
+      if (option.explanation) {
+        const explanation = document.createElement("span");
+        explanation.className = "quiz-option-explanation";
+        explanation.innerHTML = sanitizeRichText(option.explanation);
+        text.append(explanation);
+      }
+      if (option.explanationImage) text.append(createQuizImage(option.explanationImage, "Option explanation", "quiz-explanation-image"));
+    }
     label.append(input, text);
     container.append(label);
   });
@@ -2719,14 +2738,16 @@ function renderDropdown(question, answerState) {
   const select = document.createElement("select");
   select.className = "quiz-select";
   select.append(new Option("Choose an answer", ""));
-  (question.raw.dropdownOptions || []).forEach((option, index) => select.append(new Option(option, String(index))));
+  (question.raw.dropdownOptions || []).forEach((option, index) => select.append(new Option(formatQuizText(option, `Option ${index + 1}`), String(index))));
+  const badge = feedbackBadge(question, answerState);
   select.value = answerState?.value ?? "";
   select.addEventListener("change", () => {
     const value = select.value === "" ? "" : Number(select.value);
     saveQuizAnswer(question.id, value, gradeQuestion(question, value));
-    renderQuiz();
+    replaceFeedbackBadge(wrap, question);
+    syncQuizChrome();
   });
-  wrap.append(select, feedbackBadge(answerState));
+  wrap.append(select, badge);
   return wrap;
 }
 
@@ -2736,9 +2757,14 @@ function renderTextQuestion(question, answerState) {
   input.className = "quiz-textarea";
   input.rows = 4;
   input.placeholder = "Type your answer";
+  const badge = feedbackBadge(question, answerState);
   input.value = answerState?.value || "";
-  input.addEventListener("input", () => saveQuizAnswer(question.id, input.value, gradeQuestion(question, input.value)));
-  wrap.append(input, feedbackBadge(answerState));
+  input.addEventListener("input", () => {
+    saveQuizAnswer(question.id, input.value, gradeQuestion(question, input.value));
+    replaceFeedbackBadge(wrap, question);
+    syncQuizChrome();
+  });
+  wrap.append(input, badge);
   return wrap;
 }
 
@@ -2748,20 +2774,26 @@ function renderNumericQuestion(question, answerState) {
   input.className = "quiz-select";
   input.type = "number";
   input.step = "any";
+  const badge = feedbackBadge(question, answerState);
   input.value = answerState?.value ?? "";
   input.placeholder = "Enter a number";
-  input.addEventListener("input", () => saveQuizAnswer(question.id, input.value, gradeQuestion(question, input.value)));
-  wrap.append(input, feedbackBadge(answerState));
+  input.addEventListener("input", () => {
+    saveQuizAnswer(question.id, input.value, gradeQuestion(question, input.value));
+    replaceFeedbackBadge(wrap, question);
+    syncQuizChrome();
+  });
+  wrap.append(input, badge);
   return wrap;
 }
 
 function renderMultiInputQuestion(question, answerState) {
   const wrap = document.createElement("div");
+  const badge = feedbackBadge(question, answerState);
   for (const segment of question.raw.questionSegments || []) {
     if (segment.__typename === "MultipleInputQuestionText") {
       const text = document.createElement("span");
       text.className = "inline-segment";
-      text.textContent = segment.text;
+      text.textContent = formatQuizText(segment.text, "");
       wrap.append(text);
     } else if (segment.__typename === "MultipleInputQuestionBlank") {
       const input = document.createElement("input");
@@ -2773,11 +2805,13 @@ function renderMultiInputQuestion(question, answerState) {
         const next = { ...(state.quizSession.answers[question.id]?.value || {}) };
         next[segment.fieldIndex] = input.value;
         saveQuizAnswer(question.id, next, gradeQuestion(question, next));
+        replaceFeedbackBadge(wrap, question);
+        syncQuizChrome();
       });
       wrap.append(input);
     }
   }
-  wrap.append(feedbackBadge(answerState));
+  wrap.append(badge);
   return wrap;
 }
 
@@ -2787,16 +2821,23 @@ function renderLongQuestion(question, answerState) {
   textarea.className = "quiz-textarea";
   textarea.rows = 6;
   textarea.placeholder = "Write your answer";
+  const badge = feedbackBadge(question, answerState);
   textarea.value = answerState?.value || "";
-  textarea.addEventListener("input", () => saveQuizAnswer(question.id, textarea.value, gradeQuestion(question, textarea.value)));
+  textarea.addEventListener("input", () => {
+    saveQuizAnswer(question.id, textarea.value, gradeQuestion(question, textarea.value));
+    syncLongAnswerUi(wrap, question);
+    replaceFeedbackBadge(wrap, question);
+    syncQuizChrome();
+  });
   wrap.append(textarea);
   if (question.raw.modelAnswer) {
     const model = document.createElement("details");
     model.className = "quiz-hint";
-    model.innerHTML = `<summary>Model answer</summary><div>${question.raw.modelAnswer}</div>`;
+    model.innerHTML = `<summary>Model answer</summary><div>${sanitizeRichText(question.raw.modelAnswer)}</div>`;
     wrap.append(model);
   }
-  wrap.append(feedbackBadge(answerState));
+  if (hasQuizAnswerValue(answerState)) wrap.append(renderSelfMarkPanel(question, answerState));
+  wrap.append(badge);
   return wrap;
 }
 
@@ -2805,29 +2846,41 @@ function renderShortInputQuestion(question, answerState) {
   const input = document.createElement("input");
   input.className = "quiz-select";
   input.type = "text";
+  const badge = feedbackBadge(question, answerState);
   input.value = answerState?.value || "";
   input.placeholder = "Type your answer";
-  input.addEventListener("input", () => saveQuizAnswer(question.id, input.value, gradeQuestion(question, input.value)));
-  wrap.append(input, feedbackBadge(answerState));
+  input.addEventListener("input", () => {
+    saveQuizAnswer(question.id, input.value, gradeQuestion(question, input.value));
+    replaceFeedbackBadge(wrap, question);
+    syncQuizChrome();
+  });
+  wrap.append(input, badge);
   return wrap;
 }
 
-function feedbackBadge(answerState) {
+function feedbackBadge(question, answerState) {
   const badge = document.createElement("div");
   badge.className = "feedback-badge";
-  if (!answerState) badge.textContent = "Not answered yet";
+  if (!hasQuizAnswerValue(answerState)) badge.textContent = "Answer this to unlock feedback";
   else if (answerState.correct === true) {
-    badge.textContent = "Looks correct";
+    badge.textContent = "Correct";
     badge.classList.add("is-correct");
   } else if (answerState.correct === false) {
-    badge.textContent = "Needs another pass";
+    badge.textContent = "Incorrect";
     badge.classList.add("is-wrong");
-  } else badge.textContent = "Saved";
+  } else if (isSelfMarkQuestion(question)) {
+    badge.textContent = question.raw.modelAnswer
+      ? "Compare with the model answer, then self-mark"
+      : "Self-mark this answer";
+  } else {
+    badge.textContent = "Saved";
+  }
   return badge;
 }
 
-function saveQuizAnswer(questionId, value, correct) {
-  state.quizSession.answers[questionId] = { value, correct };
+function saveQuizAnswer(questionId, value, correct, extras = {}) {
+  const previous = state.quizSession.answers[questionId] || {};
+  state.quizSession.answers[questionId] = { ...previous, value, correct, ...extras };
   getQuizProgress(state.quizSession.quiz.jsonPath).answers = state.quizSession.answers;
   saveProgress();
 }
@@ -2851,6 +2904,7 @@ function finishQuiz() {
   const graded = session.questions.map((question) => ({ question, correct: session.answers[question.id]?.correct })).filter((item) => typeof item.correct === "boolean");
   const correctCount = graded.filter((item) => item.correct).length;
   const score = session.questions.length ? Math.round((correctCount / session.questions.length) * 100) : 0;
+  const pendingSelfMark = session.questions.filter((question) => needsSelfMark(question, session.answers[question.id]));
   const progress = getQuizProgress(session.quiz.jsonPath);
   progress.attempts += 1;
   progress.lastScore = score;
@@ -2867,6 +2921,7 @@ function finishQuiz() {
     quizPath: session.quiz.jsonPath,
     quizTitle: session.quiz.title,
     score,
+    pendingSelfMarkCount: pendingSelfMark.length,
     wrongByType,
     wrongPrompts: wrongItems.map((item) => ({ type: item.question.type, prompt: readableQuestionTitle(item.question) })).slice(0, 10),
   };
@@ -3117,23 +3172,238 @@ function escapeHtml(value) {
 }
 
 function formatQuizPromptHtml(question) {
-  const raw = question.raw.question || question.raw.description || "";
-  const cleaned = sanitizeRichText(raw)
-    .replace(/\$\$\\newline\$\$/g, "<br /><br />")
-    .replace(/(?:<br\s*\/?>\s*){3,}/gi, "<br /><br />");
-  if (cleaned.trim()) return cleaned;
+  const parts = [
+    normalizeQuizHtmlFragment(question.stem || ""),
+    normalizeQuizHtmlFragment(question.raw.question || question.raw.description || ""),
+  ].filter(Boolean);
+  const uniqueParts = parts.filter((part, index) => parts.indexOf(part) === index);
+  if (uniqueParts.length) return uniqueParts.join("");
+  if (question.type === "MultipleInputQuestion") return "";
   return `<p>${escapeHtml(question.type)}</p>`;
 }
 
 function sanitizeRichText(value) {
-  return String(value)
-    .replace(/\$\$\\newline\$\$/g, "<br /><br />")
+  const repaired = repairMojibake(value ?? "");
+  return repaired
+    .replace(/\$\$\\newline\$\$/gi, "<br /><br />")
+    .replace(/\$\$([\s\S]*?)\$\$/g, (_, inner) => {
+      const normalized = normalizeMathishContent(inner);
+      return normalized ? escapeHtml(normalized) : "";
+    })
     .replace(/\\n/g, "<br />")
     .replace(/>\s+</g, "> <");
 }
 
 function stripHtml(value) {
   return String(value).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function normalizeQuizHtmlFragment(value) {
+  const cleaned = sanitizeRichText(value || "")
+    .replace(/(?:<br\s*\/?>\s*){3,}/gi, "<br /><br />")
+    .trim();
+  const textOnly = stripHtml(cleaned).trim();
+  return textOnly ? cleaned : "";
+}
+
+function formatQuizText(value, fallback = "") {
+  const normalized = stripHtml(sanitizeRichText(value || ""));
+  return normalized || fallback;
+}
+
+function quizChoiceLabel(index) {
+  return `Choice ${String.fromCharCode(65 + index)}`;
+}
+
+function createQuizImage(src, alt = "", className = "quiz-media") {
+  const image = document.createElement("img");
+  image.className = className;
+  image.src = src;
+  image.alt = alt;
+  image.loading = "lazy";
+  return image;
+}
+
+function appendQuizMedia(container, images, altBase, className) {
+  images.forEach((src, index) => {
+    container.append(createQuizImage(src, images.length > 1 ? `${altBase} ${index + 1}` : altBase, className));
+  });
+}
+
+function collectQuestionImages(question) {
+  return [...new Set([
+    question.raw.topImage,
+    question.raw.image,
+  ].filter(Boolean))];
+}
+
+function hasQuizAnswerValue(answerState) {
+  if (!answerState) return false;
+  const { value } = answerState;
+  if (Array.isArray(value)) return value.length > 0;
+  if (value && typeof value === "object") return Object.values(value).some((entry) => String(entry || "").trim() !== "");
+  return value !== "" && value != null;
+}
+
+function isSelfMarkQuestion(question) {
+  return question.type === "EngageQuestion" || question.type === "DrawQuestion";
+}
+
+function needsSelfMark(question, answerState) {
+  return isSelfMarkQuestion(question) && hasQuizAnswerValue(answerState) && typeof answerState?.correct !== "boolean";
+}
+
+function renderQuizStatus(session) {
+  const progress = getQuizProgress(session.quiz.jsonPath);
+  const answeredCount = session.questions.filter((question) => hasQuizAnswerValue(session.answers[question.id])).length;
+  const selfMarkPending = session.questions.filter((question) => needsSelfMark(question, session.answers[question.id])).length;
+  quizScoreboard.innerHTML = "";
+  quizScoreboard.append(metric(`${progress.attempts} attempts`));
+  quizScoreboard.append(metric(`${progress.bestScore}% best score`));
+  quizScoreboard.append(metric(`${answeredCount}/${session.questions.length} answered`));
+  if (selfMarkPending) quizScoreboard.append(metric(`${selfMarkPending} self-mark pending`));
+  quizScoreboard.append(metric(progress.completed ? "completed" : "in progress"));
+}
+
+function syncQuizChrome() {
+  const session = state.quizSession;
+  if (!session || session.finished) return;
+  const current = session.questions[session.index];
+  renderQuizStatus(session);
+  prevQuizBtn.disabled = session.index === 0;
+  const unanswered = !hasQuizAnswerValue(session.answers[current.id]);
+  nextQuizBtn.textContent = session.index === session.questions.length - 1
+    ? (unanswered ? "Finish with blanks" : "Finish quiz")
+    : (unanswered ? "Skip question" : "Next");
+}
+
+function renderSelfMarkPanel(question, answerState) {
+  const panel = document.createElement("div");
+  panel.className = "quiz-self-mark";
+  const prompt = document.createElement("p");
+  prompt.className = "quiz-self-mark-copy";
+  prompt.textContent = question.raw.modelAnswer
+    ? "Your wording does not need to match exactly. Compare the substance of your answer with the model answer, then self-mark it."
+    : "Decide whether your answer is strong enough, then self-mark it.";
+  panel.append(prompt);
+
+  const actions = document.createElement("div");
+  actions.className = "quiz-self-mark-actions";
+  const markCorrect = document.createElement("button");
+  markCorrect.type = "button";
+  markCorrect.className = `button button-ghost${answerState?.correct === true ? " is-active" : ""}`;
+  markCorrect.textContent = "Mark as correct";
+  markCorrect.addEventListener("click", () => {
+    saveQuizAnswer(question.id, state.quizSession.answers[question.id]?.value || "", true);
+    renderQuiz();
+  });
+
+  const markIncorrect = document.createElement("button");
+  markIncorrect.type = "button";
+  markIncorrect.className = `button button-ghost${answerState?.correct === false ? " is-active" : ""}`;
+  markIncorrect.textContent = "Needs more work";
+  markIncorrect.addEventListener("click", () => {
+    saveQuizAnswer(question.id, state.quizSession.answers[question.id]?.value || "", false);
+    renderQuiz();
+  });
+
+  actions.append(markCorrect, markIncorrect);
+  panel.append(actions);
+  return panel;
+}
+
+function replaceFeedbackBadge(container, question) {
+  const existing = container.querySelector(".feedback-badge");
+  if (!existing) return;
+  existing.replaceWith(feedbackBadge(question, state.quizSession.answers[question.id]));
+}
+
+function syncLongAnswerUi(container, question) {
+  const existing = container.querySelector(".quiz-self-mark");
+  if (existing) existing.remove();
+  const answerState = state.quizSession.answers[question.id];
+  if (!hasQuizAnswerValue(answerState)) return;
+  const badge = container.querySelector(".feedback-badge");
+  const panel = renderSelfMarkPanel(question, answerState);
+  if (badge) container.insertBefore(panel, badge);
+  else container.append(panel);
+}
+
+function isOptionSelected(answerState, index, multi) {
+  if (!hasQuizAnswerValue(answerState)) return false;
+  if (multi) return new Set(answerState.value || []).has(index);
+  return answerState.value === index;
+}
+
+function shouldShowOptionExplanation(question, answerState, index, multi) {
+  if (!hasQuizAnswerValue(answerState)) return false;
+  if (isOptionSelected(answerState, index, multi)) return true;
+  if (multi) return answerState.correct === false && question.raw.options?.[index]?.correct;
+  return answerState.correct === false && question.raw.correctOptionIndex === index;
+}
+
+function buildOptionCardClass(question, answerState, index, multi) {
+  const classes = ["option-card"];
+  const selected = isOptionSelected(answerState, index, multi);
+  if (selected) classes.push("is-selected");
+  if (shouldShowOptionExplanation(question, answerState, index, multi)) classes.push("is-revealed");
+  if (!hasQuizAnswerValue(answerState)) return classes.join(" ");
+  if (multi) {
+    const correct = Boolean(question.raw.options?.[index]?.correct);
+    if (selected && correct) classes.push("is-correct");
+    else if (selected && !correct) classes.push("is-wrong");
+    else if (answerState.correct === false && correct) classes.push("is-correct");
+    return classes.join(" ");
+  }
+  if (question.raw.correctOptionIndex === index) classes.push("is-correct");
+  else if (selected && answerState.correct === false) classes.push("is-wrong");
+  return classes.join(" ");
+}
+
+function repairMojibake(value) {
+  const text = String(value ?? "");
+  if (!/[ÃÂâ]/.test(text)) return text;
+  try {
+    const bytes = Uint8Array.from(text, (char) => char.charCodeAt(0) & 0xff);
+    const decoded = new TextDecoder("utf-8").decode(bytes);
+    if (decoded && !decoded.includes("\uFFFD")) return decoded;
+  } catch (_) {
+    // Fall through to targeted replacements.
+  }
+  return text
+    .replaceAll("Â£", "£")
+    .replaceAll("â€™", "’")
+    .replaceAll("â€˜", "‘")
+    .replaceAll("â€œ", "“")
+    .replaceAll("â€\u009d", "”")
+    .replaceAll("â€“", "–")
+    .replaceAll("â€”", "—")
+    .replaceAll("â€¦", "…")
+    .replaceAll("Â", "");
+}
+
+function normalizeMathishContent(value) {
+  let normalized = repairMojibake(value ?? "");
+  normalized = normalized
+    .replace(/\\newline/gi, " ")
+    .replace(/\\text(?:normal|rm|bf|it|mathrm)\{([^{}]*)\}/gi, "$1")
+    .replace(/\\frac\s*\{([^{}]+)\}\s*\{([^{}]+)\}/gi, "($1/$2)")
+    .replace(/\\pm/gi, "±")
+    .replace(/\\times/gi, "×")
+    .replace(/\\cdot/gi, "·")
+    .replace(/\\leq/gi, "≤")
+    .replace(/\\geq/gi, "≥")
+    .replace(/\\neq/gi, "≠")
+    .replace(/\\approx/gi, "≈")
+    .replace(/\\rightarrow/gi, "→")
+    .replace(/\\left|\\right/gi, "")
+    .replace(/\\%/g, "%")
+    .replace(/\\_/g, "_")
+    .replace(/\\\s+/g, " ")
+    .replace(/[{}]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return normalized === "$$" ? "" : normalized;
 }
 
 boot().catch((error) => {
