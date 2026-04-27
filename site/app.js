@@ -37,6 +37,7 @@ const SPEC_BLUEPRINT = {
 const state = {
   catalog: null,
   filteredModules: [],
+  currentModuleId: null,
   progress: loadProgress(),
   quizSession: null,
   flashcardSession: null,
@@ -274,12 +275,31 @@ async function fetchChunk(url, offset, size = 1024 * 1024) {
 const searchInput = document.getElementById("searchInput");
 const yearFilter = document.getElementById("yearFilter");
 const moduleFilter = document.getElementById("moduleFilter");
+const appBrand = document.querySelector(".app-brand");
+const coursesNavLink = document.querySelector('.app-nav-link[href="#resultTitle"]');
+const todayNavLink = document.querySelector('.app-nav-link[href="#todayTitle"]');
+const studyNavLink = document.querySelector('.app-nav-link[href="#studyTitle"]');
 const resumeStudyBtn = document.getElementById("resumeStudyBtn");
 const studyStageSelect = document.getElementById("studyStageSelect");
 const coveredOnlyToggle = document.getElementById("coveredOnlyToggle");
 const allowFutureToggle = document.getElementById("allowFutureToggle");
 const statsGrid = document.getElementById("statsGrid");
 const moduleList = document.getElementById("moduleList");
+const pageShell = document.querySelector(".page-shell");
+const appSidebar = document.querySelector(".sidebar");
+const heroSection = document.querySelector(".hero");
+const resultsHeader = document.querySelector(".results-header");
+const dashboardDetails = document.querySelector(".dashboard-details");
+const moduleView = document.getElementById("moduleView");
+const moduleViewTitle = document.getElementById("moduleViewTitle");
+const moduleViewMeta = document.getElementById("moduleViewMeta");
+const moduleViewActions = document.getElementById("moduleViewActions");
+const moduleViewStats = document.getElementById("moduleViewStats");
+const moduleViewTopicsTitle = document.getElementById("moduleViewTopicsTitle");
+const moduleViewTopicsMeta = document.getElementById("moduleViewTopicsMeta");
+const moduleViewSections = document.getElementById("moduleViewSections");
+const moduleViewExamList = document.getElementById("moduleViewExamList");
+const moduleViewDefinitionList = document.getElementById("moduleViewDefinitionList");
 const resultTitle = document.getElementById("resultTitle");
 const resultMeta = document.getElementById("resultMeta");
 const progressTitle = document.getElementById("progressTitle");
@@ -300,6 +320,7 @@ const studyTitle = document.getElementById("studyTitle");
 const studyMeta = document.getElementById("studyMeta");
 const studyActions = document.getElementById("studyActions");
 const studyContent = document.getElementById("studyContent");
+const studyLayout = document.querySelector(".study-layout");
 const studyPanelRoot = document.querySelector(".study-panel");
 const notesTitle = document.getElementById("notesTitle");
 const notesMeta = document.getElementById("notesMeta");
@@ -378,6 +399,7 @@ async function boot() {
   await initCloudLayer();
   renderStats(state.catalog.stats);
   applyFilters();
+  syncRouteToView();
   updateResumeStudyButton();
 }
 
@@ -422,6 +444,11 @@ function setupNavSync() {
 
 function bindEvents() {
   setupNavSync();
+  window.addEventListener("hashchange", syncRouteToView);
+  appBrand?.addEventListener("click", handleCoursesNavigation);
+  coursesNavLink?.addEventListener("click", handleCoursesNavigation);
+  todayNavLink?.addEventListener("click", handleTodayNavigation);
+  studyNavLink?.addEventListener("click", handleStudyNavigation);
   searchInput.addEventListener("input", applyFilters);
   yearFilter.addEventListener("change", applyFilters);
   moduleFilter.addEventListener("change", applyFilters);
@@ -461,6 +488,27 @@ function bindEvents() {
   startPaperTimerBtn.addEventListener("click", startPaperTimer);
   pausePaperTimerBtn.addEventListener("click", pausePaperTimer);
   resetPaperTimerBtn.addEventListener("click", resetPaperTimer);
+}
+
+function handleCoursesNavigation(event) {
+  if (state.currentModuleId) {
+    event.preventDefault();
+    leaveModuleView();
+  }
+}
+
+function handleTodayNavigation(event) {
+  if (state.currentModuleId) {
+    event.preventDefault();
+    studyLayout.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+}
+
+function handleStudyNavigation(event) {
+  if (state.currentModuleId) {
+    event.preventDefault();
+    studyLayout.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 }
 
 function loadProgress() {
@@ -902,6 +950,10 @@ function applyFilters() {
 
   renderModules();
   restoreOpenModuleState(openState);
+  if (state.currentModuleId) {
+    const activeModule = findModuleById(state.currentModuleId);
+    if (activeModule) renderModuleView(activeModule);
+  }
   renderProgressSummary();
   renderSmartDashboard();
   renderTodayPlan();
@@ -926,16 +978,120 @@ function captureOpenModuleState() {
 }
 
 function restoreOpenModuleState(openState) {
-  const openModules = new Set(openState?.modules || []);
   const openSections = new Set(openState?.sections || []);
   moduleList.querySelectorAll(".module-card[data-module-id]").forEach((card) => {
     const moduleId = card.dataset.moduleId;
-    const details = card.querySelector(".module-details");
-    if (details) details.open = openModules.has(moduleId);
     card.querySelectorAll(".section-card").forEach((sectionCard) => {
       sectionCard.open = openSections.has(`${moduleId}::${sectionCard.dataset.sectionName}`);
     });
   });
+}
+
+function parseModuleIdFromHash() {
+  const match = String(window.location.hash || "").match(/^#module\/(.+)$/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+function openModuleView(moduleOrId) {
+  const moduleId = typeof moduleOrId === "string" ? moduleOrId : moduleOrId?.id;
+  if (!moduleId) return;
+  const nextHash = `#module/${encodeURIComponent(moduleId)}`;
+  if (window.location.hash === nextHash) {
+    syncRouteToView();
+    return;
+  }
+  window.location.hash = nextHash;
+}
+
+function leaveModuleView() {
+  if (!window.location.hash) {
+    syncRouteToView();
+    return;
+  }
+  history.pushState("", document.title, `${window.location.pathname}${window.location.search}`);
+  syncRouteToView();
+}
+
+function syncRouteToView() {
+  const moduleId = parseModuleIdFromHash();
+  const activeModule = moduleId ? findModuleById(moduleId) : null;
+  if (activeModule) {
+    state.currentModuleId = activeModule.id;
+    renderModuleView(activeModule);
+    pageShell.classList.add("is-module-view");
+    heroSection.hidden = true;
+    resultsHeader.hidden = true;
+    moduleList.hidden = true;
+    dashboardDetails.hidden = true;
+    moduleView.hidden = false;
+    studyLayout.hidden = false;
+  } else {
+    state.currentModuleId = null;
+    pageShell.classList.remove("is-module-view");
+    heroSection.hidden = false;
+    resultsHeader.hidden = false;
+    moduleList.hidden = false;
+    dashboardDetails.hidden = false;
+    moduleView.hidden = true;
+    studyLayout.hidden = true;
+  }
+  setupNavSync();
+}
+
+function renderModuleView(module) {
+  const visibleTopics = module.topics.filter((topic) => topicMatchesSearch(topic));
+  const progress = getModuleProgress(module);
+  moduleViewTitle.textContent = module.title;
+  moduleViewMeta.textContent = `${module.yearFolder} | ${module.course?.board?.name || "Board unknown"} | ${visibleTopics.length} visible topics`;
+  moduleViewTopicsTitle.textContent = `Browse ${module.title}`;
+  moduleViewTopicsMeta.textContent = visibleTopics.length
+    ? `${visibleTopics.reduce((sum, topic) => sum + topic.videos.length, 0)} videos | ${visibleTopics.reduce((sum, topic) => sum + topic.quizzes.length, 0)} quizzes | ${progress.score}% ready`
+    : "No topics match the current filters in this module.";
+
+  moduleViewActions.innerHTML = "";
+  moduleViewActions.append(buttonPill("Back to all modules", leaveModuleView));
+  moduleViewActions.append(buttonPill("Today from this module", () => openModulePriority(module)));
+  moduleViewActions.append(buttonPill("Drill flashcards", () => startFlashcardSession("module", module.id)));
+
+  moduleViewStats.innerHTML = "";
+  moduleViewStats.append(metric(`${visibleTopics.length} topics`));
+  moduleViewStats.append(metric(`${module.definitions.length} definition groups`));
+  moduleViewStats.append(metric(`${module.examPapers.length} exam papers`));
+  moduleViewStats.append(metric(`${visibleTopics.reduce((sum, topic) => sum + topic.videos.length, 0)} videos`));
+  moduleViewStats.append(metric(`${visibleTopics.reduce((sum, topic) => sum + topic.quizzes.length, 0)} quizzes`));
+  moduleViewStats.append(metric(`${progress.completed}/${progress.total} complete`));
+
+  renderSectionGrid(moduleViewSections, module, visibleTopics);
+  renderModuleResourcePanels(module);
+}
+
+function renderModuleResourcePanels(module) {
+  moduleViewExamList.innerHTML = "";
+  moduleViewDefinitionList.innerHTML = "";
+
+  for (const paper of getPreferredPaperOrder(module).slice(0, 6)) {
+    const practiceLabel = paper.questionCount > 0 ? "Paper mode" : "Paper notes";
+    const detail = paper.questionCount > 0
+      ? `${paper.code || "Exam paper"} | ${paper.questionCount} structured questions`
+      : `${paper.code || "Exam paper"} | reference-only export`;
+    moduleViewExamList.append(
+      actionCard(paper.title, detail, [
+        { label: practiceLabel, action: () => openExamPaperStudy(module, paper) },
+        { label: "Open raw", href: archiveUrl(paper.htmlPath || paper.jsonPath) },
+      ], "compact"),
+    );
+  }
+  if (!moduleViewExamList.children.length) moduleViewExamList.append(emptyCard("No exam papers are available for this module."));
+
+  for (const group of module.definitions.slice(0, 8)) {
+    moduleViewDefinitionList.append(
+      actionCard(group.title, `${group.count} cards`, [
+        { label: "Drill group", action: () => startFlashcardSession("group", group.id) },
+        { label: "Study notes", action: () => openDefinitionStudy(module, group) },
+      ], "compact"),
+    );
+  }
+  if (!moduleViewDefinitionList.children.length) moduleViewDefinitionList.append(emptyCard("No definition packs are available for this module."));
 }
 
 function buildModuleHaystack(module) {
@@ -1192,16 +1348,26 @@ function renderModules() {
     node.querySelector(".progress-fill").style.width = `${progress.score}%`;
 
     const links = node.querySelector(".module-links");
+    links.append(buttonPill("Open module", () => openModuleView(module)));
     links.append(buttonPill("Today from this module", () => openModulePriority(module)));
     links.append(buttonPill("Drill flashcards", () => startFlashcardSession("module", module.id)));
 
     const quickActions = node.querySelector(".module-quick-actions");
     const firstTopic = visibleTopics[0];
-    if (firstTopic) quickActions.append(buttonPill("Open first topic", () => openTopicStudy(firstTopic)));
+    if (firstTopic) quickActions.append(buttonPill("Start with first topic", () => {
+      openModuleView(module);
+      openTopicStudy(firstTopic);
+    }));
     const firstVideo = visibleTopics.find((topic) => topic.videos[0]);
-    if (firstVideo) quickActions.append(buttonPill("Start a video", () => openVideoStudy(firstVideo, firstVideo.videos[0])));
+    if (firstVideo) quickActions.append(buttonPill("Start a video", () => {
+      openModuleView(module);
+      openVideoStudy(firstVideo, firstVideo.videos[0]);
+    }));
     const firstQuiz = visibleTopics.find((topic) => topic.quizzes[0]);
-    if (firstQuiz) quickActions.append(buttonPill("Practice a quiz", () => openQuiz(firstQuiz, firstQuiz.quizzes[0])));
+    if (firstQuiz) quickActions.append(buttonPill("Practice a quiz", () => {
+      openModuleView(module);
+      openQuiz(firstQuiz, firstQuiz.quizzes[0]);
+    }));
 
     const stats = node.querySelector(".module-stats");
     stats.append(metric(`${visibleTopics.length} topics`));
@@ -1210,38 +1376,6 @@ function renderModules() {
     stats.append(metric(`${visibleTopics.reduce((sum, topic) => sum + topic.videos.length, 0)} videos`));
     stats.append(metric(`${visibleTopics.reduce((sum, topic) => sum + topic.quizzes.length, 0)} quizzes`));
     stats.append(metric(`${progress.completed}/${progress.total} complete`));
-
-    node.querySelector(".definition-count").textContent = `${module.definitions.length} packs`;
-    node.querySelector(".exam-count").textContent = `${module.examPapers.length} papers`;
-
-    const definitionsList = node.querySelector(".definitions-list");
-    for (const group of module.definitions.slice(0, 6)) {
-      definitionsList.append(
-        actionCard(group.title, `${group.count} cards`, [
-          { label: "Drill group", action: () => startFlashcardSession("group", group.id) },
-          { label: "Study notes", action: () => openDefinitionStudy(module, group) },
-        ], "compact"),
-      );
-    }
-    if (module.definitions.length > 6) definitionsList.append(emptyCard(`${module.definitions.length - 6} more definition packs are available in the archive data.`));
-
-    const examList = node.querySelector(".exam-list");
-    for (const paper of getPreferredPaperOrder(module).slice(0, 5)) {
-      const practiceLabel = paper.questionCount > 0 ? "Paper mode" : "Paper notes";
-      const detail = paper.questionCount > 0
-        ? `${paper.code || "Exam paper"} | ${paper.questionCount} structured questions`
-        : `${paper.code || "Exam paper"} | reference-only export`;
-      examList.append(
-        actionCard(paper.title, detail, [
-          { label: practiceLabel, action: () => openExamPaperStudy(module, paper) },
-          { label: "Open raw", href: archiveUrl(paper.htmlPath || paper.jsonPath) },
-        ], "compact"),
-      );
-    }
-    if (module.examPapers.length > 5) examList.append(emptyCard(`${module.examPapers.length - 5} more papers are available in the archive data.`));
-
-    const topicList = node.querySelector(".topic-list");
-    renderSectionGrid(topicList, module, visibleTopics);
     moduleList.append(node);
   }
 }
@@ -1785,6 +1919,8 @@ function getPreferredPaperOrder(module) {
 }
 
 async function openTopicStudy(topic) {
+  const module = findModuleByTopicId(topic.id);
+  if (module) openModuleView(module);
   const resources = getTopicStudyResources(topic);
   const first = resources[0];
   if (first) await first.open();
@@ -1909,6 +2045,8 @@ function buildTopicStudyActions(topic, currentId) {
 }
 
 async function openVideoStudy(topic, video, extraActions = []) {
+  const module = findModuleByTopicId(topic.id);
+  if (module) openModuleView(module);
   markTopicTouch(topic.id, "videos");
   const content = document.createElement("div");
   content.className = "study-view study-video";
@@ -2011,6 +2149,8 @@ async function openVideoStudy(topic, video, extraActions = []) {
 }
 
 async function openQuizStudyNotes(topic, quiz, extraActions = []) {
+  const module = findModuleByTopicId(topic.id);
+  if (module) openModuleView(module);
   markTopicTouch(topic.id, "quizzes");
   const quizData = await fetchJson(quiz.jsonPath);
   const content = renderQuizStudyNotes(topic, quiz, quizData);
@@ -2039,6 +2179,10 @@ async function openQuizStudyNotes(topic, quiz, extraActions = []) {
 }
 
 async function openStudyHtml({ title, meta, path, notesKey, topicId, trackKey, reopenRef = null, extraActions = [] }) {
+  if (topicId) {
+    const module = findModuleByTopicId(topicId);
+    if (module) openModuleView(module);
+  }
   if (topicId && trackKey) markTopicTouch(topicId, trackKey);
   let html;
   if ((path || "").endsWith(".html")) html = await fetchStudyHtml(path);
@@ -2195,7 +2339,7 @@ function setStudySession(session) {
       if (module && topic) {
         eyebrow.innerHTML = `
           <nav class="breadcrumb-nav">
-            <a href="#moduleList" class="breadcrumb-link" onclick="document.getElementById('moduleList')?.scrollIntoView({behavior:'smooth'})">${escapeHtml(module.title)}</a>
+            <a href="#module/${encodeURIComponent(module.id)}" class="breadcrumb-link">${escapeHtml(module.title)}</a>
             <span class="breadcrumb-separator">/</span>
             <span class="breadcrumb-text" style="color: var(--ink-soft);">${escapeHtml(topic.section)}</span>
             <span class="breadcrumb-separator">/</span>
@@ -2211,12 +2355,7 @@ function setStudySession(session) {
   }
   studyTitle.textContent = session.title;
   studyMeta.textContent = session.meta;
-  studyActions.innerHTML = "";
-  for (const action of session.actions || []) {
-    if (action.href) studyActions.append(linkPill(action.href, action.label));
-    else if (action.action) studyActions.append(buttonPill(action.label, action.action));
-  }
-  studyActions.append(buttonPill("Close workspace", clearStudyWorkspace));
+  renderStudyActions(session.actions || []);
   studyContent.innerHTML = "";
   studyContent.append(session.content);
   bindNotesToSession(session);
@@ -2233,6 +2372,59 @@ function setStudySession(session) {
     updateResumeStudyButton();
   }
   scrollStudyWorkspaceIntoView();
+}
+
+function renderStudyActions(actions) {
+  studyActions.innerHTML = "";
+  const board = document.createElement("div");
+  board.className = "study-action-board";
+
+  const buckets = [
+    { key: "current", title: "Current", items: [] },
+    { key: "switch", title: "Switch resource", items: [] },
+    { key: "practice", title: "Practice", items: [] },
+    { key: "tools", title: "Utilities", items: [] },
+  ];
+
+  const bucketFor = (label) => {
+    if (/^Viewing:/i.test(label)) return "current";
+    if (/^Practice:/i.test(label) || /^Retry/i.test(label)) return "practice";
+    if (/^Open raw/i.test(label) || /^Close workspace$/i.test(label) || /^Previous:/i.test(label) || /^Play next:/i.test(label)) return "tools";
+    return "switch";
+  };
+
+  for (const action of actions) {
+    const key = bucketFor(action.label || "");
+    buckets.find((bucket) => bucket.key === key)?.items.push(action);
+  }
+  buckets.find((bucket) => bucket.key === "tools")?.items.push({ label: "Close workspace", action: clearStudyWorkspace });
+
+  for (const bucket of buckets) {
+    if (!bucket.items.length) continue;
+    const section = document.createElement("section");
+    section.className = `study-action-group study-action-group-${bucket.key}`;
+    const title = document.createElement("p");
+    title.className = "study-action-group-title";
+    title.textContent = bucket.title;
+    const grid = document.createElement("div");
+    grid.className = "study-action-grid";
+    for (const action of bucket.items) {
+      grid.append(makeStudyActionChip(action, bucket.key));
+    }
+    section.append(title, grid);
+    board.append(section);
+  }
+
+  studyActions.append(board);
+}
+
+function makeStudyActionChip(action, bucketKey) {
+  const node = action.href ? linkPill(action.href, action.label) : buttonPill(action.label, action.action);
+  node.classList.add("study-action-chip");
+  if (bucketKey === "current") node.classList.add("is-current");
+  if (bucketKey === "practice") node.classList.add("is-practice");
+  if (bucketKey === "tools") node.classList.add("is-tool");
+  return node;
 }
 
 function scrollStudyWorkspaceIntoView() {
@@ -2318,6 +2510,10 @@ function getSessionModule(session) {
   if (session.paperKey) return findPaperByJsonPath(session.paperKey)?.module || null;
   if (session.topicId) return findModuleByTopicId(session.topicId);
   return null;
+}
+
+function findModuleById(moduleId) {
+  return state.catalog.modules.find((module) => module.id === moduleId) || null;
 }
 
 function findModuleByTopicId(topicId) {
@@ -2636,6 +2832,8 @@ function extractBodyHtml(html) {
 }
 
 async function openQuiz(topic, quiz) {
+  const module = findModuleByTopicId(topic.id);
+  if (module) openModuleView(module);
   markTopicTouch(topic.id, "quizzes");
   const quizData = await fetchJson(quiz.jsonPath);
   const questions = (quizData.progressQuizQuestions || []).map(normalizeQuestion).filter(Boolean);

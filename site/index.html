@@ -227,7 +227,41 @@
 
       </details>
 
-      <section class="study-layout">
+      <section id="moduleView" class="module-view" hidden>
+        <div class="module-view-hero">
+          <div>
+            <p class="eyebrow">Module Workspace</p>
+            <h2 id="moduleViewTitle">Module</h2>
+            <p id="moduleViewMeta" class="hero-copy"></p>
+          </div>
+          <div class="hero-actions" id="moduleViewActions"></div>
+        </div>
+        <div id="moduleViewStats" class="module-stats"></div>
+        <div class="module-view-grid">
+          <section class="planner-card module-view-main">
+            <div class="today-head">
+              <div>
+                <p class="eyebrow">Topics</p>
+                <h3 id="moduleViewTopicsTitle">Browse this module</h3>
+                <p id="moduleViewTopicsMeta" class="result-meta"></p>
+              </div>
+            </div>
+            <div id="moduleViewSections"></div>
+          </section>
+          <section class="module-view-resources">
+            <article class="planner-card">
+              <p class="eyebrow">Exam Papers</p>
+              <div id="moduleViewExamList" class="card-list"></div>
+            </article>
+            <article class="planner-card">
+              <p class="eyebrow">Definition Packs</p>
+              <div id="moduleViewDefinitionList" class="card-list"></div>
+            </article>
+          </section>
+        </div>
+      </section>
+
+      <section class="study-layout" hidden>
         <article class="study-panel">
           <div class="study-head">
             <div>
@@ -303,36 +337,7 @@
       </div>
       <div class="progress-bar"><div class="progress-fill"></div></div>
       <div class="module-stats"></div>
-      <details class="module-details">
-        <summary class="module-details-head">
-          <div>
-            <p class="eyebrow">Browse Content</p>
-            <h5 class="module-details-title">Direct access to sections, topics, videos, and quizzes</h5>
-          </div>
-          <div class="module-quick-actions"></div>
-        </summary>
-        <div class="module-details-layout">
-          <section class="module-primary-panel">
-            <div class="topic-list"></div>
-          </section>
-          <aside class="module-secondary-panel">
-            <details class="resource-cluster" open>
-              <summary class="resource-cluster-head">
-                <h6>Exam papers</h6>
-                <span class="resource-cluster-meta exam-count"></span>
-              </summary>
-              <div class="card-list exam-list"></div>
-            </details>
-            <details class="resource-cluster">
-              <summary class="resource-cluster-head">
-                <h6>Definition packs</h6>
-                <span class="resource-cluster-meta definition-count"></span>
-              </summary>
-              <div class="card-list definitions-list"></div>
-            </details>
-          </aside>
-        </div>
-      </details>
+      <div class="module-quick-actions"></div>
     </article>
   </template>
 
