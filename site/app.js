@@ -1,5 +1,7 @@
 import { CLOUD_PROGRESS_DOC_ID, DAY_MS, FIREBASE_SDK_VERSION, PAPER_GUIDANCE, SPEC_BLUEPRINT } from "./js/config/constants.js";
 import { archiveUrl, getCatalogUrl } from "./js/config/env.js";
+import { annotateCatalogWithSpec, getSectionSpecSummary } from "./js/config/spec-map.js";
+import { createDashboardFeature } from "./js/features/dashboard.js";
 import { createArchiveResourceLoader } from "./js/services/archive-resources.js";
 import { getCloudConfig, hasFirebaseConfig } from "./js/services/cloud-config.js";
 import { createEmptyProgress, getProgressTimestamp, isProgressEmpty, loadStoredProgress, saveStoredProgress } from "./js/services/progress-storage.js";
@@ -182,7 +184,6 @@ const {
   studyStageSelect,
   coveredOnlyToggle,
   allowFutureToggle,
-  statsGrid,
   moduleList,
   pageShell,
   appSidebar,
@@ -201,20 +202,6 @@ const {
   moduleViewDefinitionList,
   resultTitle,
   resultMeta,
-  progressTitle,
-  progressMeta,
-  dueTitle,
-  dueMeta,
-  focusTitle,
-  focusMeta,
-  dueList,
-  weakTopicList,
-  todayTitle,
-  todayMeta,
-  todayPlanList,
-  specMapTitle,
-  specMapMeta,
-  specMapList,
   studyTitle,
   studyMeta,
   studyActions,
@@ -284,9 +271,41 @@ const {
   flashcardEasyBtn,
 } = elements;
 
+const dashboardFeature = createDashboardFeature({
+  state,
+  elements,
+  helpers: {
+    actionCard,
+    emptyCard,
+    getNewFlashcards,
+    getDueFlashcards,
+    getPaperTarget,
+    getQuizProgress,
+    getRecommendationModules,
+    getRecommendationTopics,
+    getTeachingPathCandidate,
+    getTopicProgress,
+    getWeakTopics,
+    getWorstQuizTopic,
+    openExamPaperStudy,
+    openQuiz,
+    openTopicStudy,
+    startFlashcardSession,
+  },
+});
+
+const {
+  buildTodayPlan,
+  renderProgressSummary,
+  renderSmartDashboard,
+  renderSpecMap,
+  renderStats,
+  renderTodayPlan,
+} = dashboardFeature;
+
 async function boot() {
   const response = await fetch(getCatalogUrl());
-  state.catalog = await response.json();
+  state.catalog = annotateCatalogWithSpec(await response.json());
   normalizeProgress();
   syncPreferenceControls();
   seedFlashcards();
@@ -757,26 +776,6 @@ function populateFilters() {
   for (const module of state.catalog.modules) moduleFilter.append(new Option(module.title, module.id));
 }
 
-function renderStats(stats) {
-  const cards = [
-    ["Modules", stats.modules],
-    ["Topics", stats.topics],
-    ["Videos", stats.videos],
-    ["Quizzes", stats.quizzes],
-    ["Quiz Questions", stats.quizQuestions],
-    ["Definitions", stats.definitions],
-    ["Exam Papers", stats.examPapers],
-    ["Exam Questions", stats.examQuestions],
-  ];
-  statsGrid.innerHTML = "";
-  for (const [label, value] of cards) {
-    const card = document.createElement("article");
-    card.className = "stat-card";
-    card.innerHTML = `<p class="stat-label">${label}</p><p class="stat-value">${value.toLocaleString()}</p>`;
-    statsGrid.append(card);
-  }
-}
-
 function applyFilters() {
   const openState = captureOpenModuleState();
   const query = searchInput.value.trim().toLowerCase();
@@ -884,7 +883,7 @@ function renderModuleView(module) {
   const visibleTopics = module.topics.filter((topic) => topicMatchesSearch(topic));
   const progress = getModuleProgress(module);
   moduleViewTitle.textContent = module.title;
-  moduleViewMeta.textContent = `${module.yearFolder} | ${module.course?.board?.name || "Board unknown"} | ${visibleTopics.length} visible topics | Follow the lowest-numbered section and topic first.`;
+  moduleViewMeta.textContent = `${module.specThemeCode ? `${module.specThemeCode}: ${module.specThemeTitle} | ` : ""}${module.yearFolder} | ${module.course?.board?.name || "Board unknown"} | ${visibleTopics.length} visible topics | Follow the lowest-numbered section and topic first.`;
   moduleViewTopicsTitle.textContent = `Browse ${module.title}`;
   moduleViewTopicsMeta.textContent = visibleTopics.length
     ? `${visibleTopics.reduce((sum, topic) => sum + topic.videos.length, 0)} videos | ${visibleTopics.reduce((sum, topic) => sum + topic.quizzes.length, 0)} quizzes | ${progress.score}% ready`
@@ -958,166 +957,6 @@ function buildModuleHaystack(module) {
     .toLowerCase();
 }
 
-function renderProgressSummary() {
-  const visibleTopics = getRecommendationTopics({ coveredOnly: false, includeFuture: true });
-  const tracked = visibleTopics.map(getTopicProgress);
-  const completed = tracked.filter((item) => item.completed).length;
-  const started = tracked.filter((item) => item.score > 0).length;
-  const total = tracked.length;
-  const avg = total ? Math.round(tracked.reduce((sum, item) => sum + item.score, 0) / total) : 0;
-  progressTitle.textContent = total ? `${completed}/${total} topics fully checked off` : "No visible topics";
-  progressMeta.textContent = total
-    ? `${started} started | ${avg}% average completion | ${state.progress.updatedAt ? `saved ${new Date(state.progress.updatedAt).toLocaleString()}` : "not saved yet"}`
-    : "Adjust the filters to see revision tracking.";
-}
-
-function renderSmartDashboard() {
-  const dueAll = getDueFlashcards();
-  const dueCards = dueAll.slice(0, 8);
-  const newCards = getNewFlashcards();
-  const weakAll = getWeakTopics();
-  const weakTopics = weakAll.slice(0, 8);
-
-  if (dueAll.length) {
-    dueTitle.textContent = `${dueAll.length} flashcards due now`;
-    dueMeta.textContent = `${Math.min(dueAll.length, 12)} cards is a good session size. ${newCards.length} new cards are waiting behind them.`;
-  } else if (newCards.length) {
-    dueTitle.textContent = `${newCards.length} new flashcards ready`;
-    dueMeta.textContent = "No overdue cards yet. Start with a small batch of new cards.";
-  } else {
-    dueTitle.textContent = "No flashcards due right now";
-    dueMeta.textContent = "Use mixed review to keep memory fresh.";
-  }
-
-  focusTitle.textContent = weakAll.length ? `${weakAll.length} weaker topics to target` : "No clear weak topics yet";
-  focusMeta.textContent = weakAll.length
-    ? "These combine low completion, weak quiz performance, and missing notes within your current study rules."
-    : state.progress.preferences.coveredOnly
-      ? "Cover a few topics first, then weak-spot recommendations will appear."
-      : "Finish a few quizzes or checks and this panel will sharpen.";
-
-  dueList.innerHTML = "";
-  if (!dueCards.length && !newCards.length) dueList.append(emptyCard("Nothing due. Mixed review is a good next step."));
-  if (!dueCards.length && newCards.length) {
-    for (const item of newCards.slice(0, 8)) {
-      dueList.append(actionCard(item.prompt, `${item.moduleTitle} | ${item.groupTitle} | new`, [{ label: "Learn card", action: () => startFlashcardSession("single", item.id) }]));
-    }
-  }
-  for (const item of dueCards) {
-    dueList.append(actionCard(item.prompt, `${item.moduleTitle} | ${item.groupTitle}`, [{ label: "Review card", action: () => startFlashcardSession("single", item.id) }]));
-  }
-
-  weakTopicList.innerHTML = "";
-  if (!weakTopics.length) weakTopicList.append(emptyCard("No weak-topic recommendations yet."));
-  for (const topic of weakTopics) {
-    const progress = getTopicProgress(topic);
-    weakTopicList.append(
-      actionCard(topic.name, `${topic.section} | ${progress.score}% ready`, [
-        { label: "Study topic", action: () => openTopicStudy(topic) },
-        topic.quizzes[0] ? { label: "Practice quiz", action: () => openQuiz(topic, topic.quizzes[0]) } : null,
-      ].filter(Boolean)),
-    );
-  }
-}
-
-function renderTodayPlan() {
-  const plan = buildTodayPlan();
-  todayTitle.textContent = plan.length ? `${plan.length} steps ready for today` : "Nothing urgent right now";
-  todayMeta.textContent = plan.length
-    ? "The order balances spaced recall, weak-topic repair, and active practice."
-    : "Use mixed review or open a topic to keep momentum going.";
-  todayPlanList.innerHTML = "";
-  if (!plan.length) {
-    todayPlanList.append(emptyCard("No generated steps yet."));
-    return;
-  }
-  for (const step of plan) {
-    todayPlanList.append(actionCard(step.title, step.subtitle, [{ label: step.cta, action: step.action }]));
-  }
-}
-
-function renderSpecMap() {
-  const modules = getRecommendationModules();
-  const entries = modules.map((module) => ({ module, blueprint: SPEC_BLUEPRINT[module.id] })).filter((item) => item.blueprint);
-  specMapTitle.textContent = entries.length ? `${entries.length} Edexcel theme guides visible` : "No theme guides visible";
-  specMapMeta.textContent = entries.length
-    ? `Built from the Pearson Edexcel specification themes and revision-note topic structure. Current stage: ${state.progress.preferences.stage === "alevel" ? "A Level" : "AS"}.`
-    : "Adjust filters to view the specification map.";
-  specMapList.innerHTML = "";
-  if (!entries.length) {
-    specMapList.append(emptyCard("No visible modules match the current specification map."));
-    return;
-  }
-  for (const { module, blueprint } of entries) {
-    const card = document.createElement("article");
-    card.className = "spec-map-card";
-    card.innerHTML = `
-      <p class="eyebrow">${escapeHtml(module.yearFolder)}</p>
-      <h4>${escapeHtml(blueprint.theme)}</h4>
-      <p>${escapeHtml(blueprint.papers.join(" and "))}</p>
-      <ul>${blueprint.revision.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
-    `;
-    specMapList.append(card);
-  }
-}
-
-function buildTodayPlan() {
-  const plan = [];
-  const due = getDueFlashcards();
-  const fresh = getNewFlashcards();
-  const teachingTarget = getTeachingPathCandidate();
-  const weak = getWeakTopics();
-  const quizTarget = getWorstQuizTopic();
-  const paperTarget = getPaperTarget();
-
-  if (teachingTarget) {
-    plan.push({
-      title: `Continue with ${teachingTarget.name}`,
-      subtitle: `${teachingTarget.section} | next best topic in teaching order`,
-      cta: "Teach this topic",
-      action: () => openTopicStudy(teachingTarget),
-    });
-  }
-
-  if (weak[0] && (!teachingTarget || weak[0].id !== teachingTarget.id)) {
-    plan.push({
-      title: `Repair ${weak[0].name}`,
-      subtitle: `${weak[0].section} | weak understanding or thin notes`,
-      cta: "Repair topic",
-      action: () => openTopicStudy(weak[0]),
-    });
-  }
-
-  if (quizTarget && plan.length < 4) {
-    plan.push({
-      title: `Retry ${getQuizLabel(quizTarget.topic, quizTarget.quiz)}`,
-      subtitle: `${quizTarget.topic.name} | best score ${getQuizProgress(quizTarget.quiz.jsonPath).bestScore || 0}%`,
-      cta: "Practice quiz",
-      action: () => openQuiz(quizTarget.topic, quizTarget.quiz),
-    });
-  }
-
-  if (paperTarget && plan.length < 4) {
-    plan.push({
-      title: `Timed paper: ${paperTarget.paper.title}`,
-      subtitle: `${paperTarget.module.title} | exam practice and self-marking`,
-      cta: "Open paper mode",
-      action: () => openExamPaperStudy(paperTarget.module, paperTarget.paper),
-    });
-  }
-
-  if ((due.length || fresh.length) && plan.length < 4) {
-    plan.push({
-      title: due.length ? `Clear ${Math.min(due.length, 12)} due flashcards` : `Learn ${Math.min(fresh.length, 12)} new flashcards`,
-      subtitle: due.length ? "Use spaced recall after your main note-taking block." : "Prime your memory with a controlled batch of new cards.",
-      cta: "Start flashcards",
-      action: () => startFlashcardSession("due"),
-    });
-  }
-
-  return plan.slice(0, 4);
-}
-
 function renderMistakeList() {
   const reviews = Object.values(state.progress.quizReviews)
     .sort((a, b) => Date.parse(b.at || 0) - Date.parse(a.at || 0))
@@ -1183,9 +1022,9 @@ function renderModules() {
     const visibleTopics = module.topics.filter((topic) => topicMatchesSearch(topic));
     const node = moduleTemplate.content.firstElementChild.cloneNode(true);
     node.dataset.moduleId = module.id;
-    node.querySelector(".module-year").textContent = module.yearFolder;
+    node.querySelector(".module-year").textContent = module.specThemeCode ? `${module.yearFolder} | ${module.specThemeCode}` : module.yearFolder;
     node.querySelector(".module-title").textContent = module.title;
-    node.querySelector(".module-subtitle").textContent = `${module.course?.board?.name || "Board unknown"} | ${module.course?.name || "Course"}`;
+    node.querySelector(".module-subtitle").textContent = `${module.specThemeTitle || module.course?.name || "Course"} | ${module.course?.board?.name || "Board unknown"}`;
     const progress = getModuleProgress(module);
     node.querySelector(".progress-fill").style.width = `${progress.score}%`;
 
@@ -1212,6 +1051,7 @@ function renderModules() {
     }));
 
     const stats = node.querySelector(".module-stats");
+    if (module.specRange) stats.append(metric(`Spec ${module.specRange}`));
     stats.append(metric(`${visibleTopics.length} topics`));
     stats.append(metric(`${module.definitions.length} definition groups`));
     stats.append(metric(`${module.examPapers.length} exam papers`));
@@ -1265,6 +1105,18 @@ function groupTopicsBySection(module, topics) {
   return ordered;
 }
 
+function buildSpecSubtitle(tag, subtitle) {
+  return tag ? `${tag} | ${subtitle}` : subtitle;
+}
+
+function getEntitySpecTag(entity, fallbackTopic = null) {
+  return entity?.specTag || fallbackTopic?.specTag || "";
+}
+
+function getEntitySpecLabel(entity, fallbackTopic = null) {
+  return entity?.specCodeLabel || fallbackTopic?.specCodeLabel || "";
+}
+
 function renderSectionCard(section, topics, options = {}) {
   const card = document.createElement("details");
   card.className = "section-card";
@@ -1276,7 +1128,8 @@ function renderSectionCard(section, topics, options = {}) {
   header.className = "section-card-head";
   const title = document.createElement("h5");
   title.className = "section-card-title";
-  title.textContent = `${options.sectionIndex != null ? `Step ${options.sectionIndex + 1}. ` : ""}${section}`;
+  const sectionSpecSummary = getSectionSpecSummary(topics);
+  title.textContent = `${options.sectionIndex != null ? `Step ${options.sectionIndex + 1}. ` : ""}${sectionSpecSummary ? `${sectionSpecSummary} ` : ""}${section}`;
   const meta = document.createElement("span");
   meta.className = "metric";
   meta.textContent = `${completedCount}/${topics.length} complete`;
@@ -1351,6 +1204,12 @@ function renderSectionTopicButton(topic, options = {}) {
 
   const orderLine = document.createElement("div");
   orderLine.className = "section-topic-order";
+  if (topic.specTag) {
+    const specPill = document.createElement("span");
+    specPill.className = `topic-spec-pill${topic.specSupplemental ? " is-supplemental" : ""}`;
+    specPill.textContent = topic.specSupplemental ? "Supplemental" : topic.specCodeLabel;
+    orderLine.append(specPill);
+  }
   const orderPill = document.createElement("span");
   orderPill.className = "topic-order-pill";
   orderPill.textContent = `Order ${topic.subsectionNumber || options.topicIndex + 1}`;
@@ -1399,10 +1258,11 @@ function renderTopic(topic) {
   const node = topicTemplate.content.firstElementChild.cloneNode(true);
   const topicProgress = getTopicProgress(topic);
   node.dataset.topicId = topic.id;
-  node.querySelector(".topic-section").textContent = topic.section;
-  node.querySelector(".topic-name").textContent = `${topic.subsectionNumber || ""}. ${topic.name}`;
+  node.querySelector(".topic-section").textContent = topic.specSectionLabel ? `${topic.specSectionLabel} | ${topic.section}` : topic.section;
+  node.querySelector(".topic-name").textContent = `${topic.specCodeLabel ? `${topic.specCodeLabel} | ` : topic.specSupplemental ? "Supplemental | " : ""}${topic.subsectionNumber || ""}${topic.subsectionNumber ? ". " : ""}${topic.name}`;
 
   const metrics = node.querySelector(".topic-metrics");
+  if (topic.specTag) metrics.append(metric(topic.specTag));
   metrics.append(metric(`${topicProgress.score}% done`));
   if (topic.videos.length) metrics.append(metric(`${topic.videos.length} videos`));
   if (topic.quizzes.length) metrics.append(metric(`${topic.quizzes.length} quizzes`));
@@ -1427,7 +1287,7 @@ function renderTopic(topic) {
   for (const [quizIndex, quiz] of topic.quizzes.entries()) {
     const progress = getQuizProgress(quiz.jsonPath);
     quizList.append(
-      actionCard(getQuizLabel(topic, quiz, quizIndex), `${quiz.questionCount} questions | ${progress.completed ? "completed" : progress.lastScore ? `${progress.lastScore}% best` : "not started"}`, [
+      actionCard(getQuizLabel(topic, quiz, quizIndex), buildSpecSubtitle(getEntitySpecTag(quiz, topic), `${quiz.questionCount} questions | ${progress.completed ? "completed" : progress.lastScore ? `${progress.lastScore}% best` : "not started"}`), [
         { label: "Practice", action: () => openQuiz(topic, quiz) },
         { label: "Review notes", action: () => openQuizStudyNotes(topic, quiz) },
         quiz.assetFolder ? { label: "Assets", href: archiveUrl(quiz.assetFolder) } : null,
@@ -1438,9 +1298,9 @@ function renderTopic(topic) {
   const videoList = node.querySelector(".video-list");
   for (const video of topic.videos) {
     videoList.append(
-      actionCard(video.displayTitle || video.title, video.kind, [
+      actionCard(video.displayTitle || video.title, buildSpecSubtitle(getEntitySpecTag(video, topic), video.kind), [
         { label: "Study video", action: () => openVideoStudy(topic, video) },
-        video.htmlPath ? { label: "Lesson notes", action: () => openStudyHtml({ title: video.title, meta: `${topic.name} | Lesson notes`, path: video.htmlPath, notesKey: `videohtml:${video.htmlPath}`, topicId: topic.id, trackKey: "videos" }) } : null,
+        video.htmlPath ? { label: "Lesson notes", action: () => openStudyHtml({ title: video.title, meta: `${topic.name} | Lesson notes`, path: video.htmlPath, notesKey: `videohtml:${video.htmlPath}`, topicId: topic.id, trackKey: "videos", specTag: getEntitySpecTag(video, topic), specCodeLabel: getEntitySpecLabel(video, topic) }) } : null,
       ].filter(Boolean)),
     );
   }
@@ -1448,8 +1308,8 @@ function renderTopic(topic) {
   const articleList = node.querySelector(".article-list");
   for (const article of topic.articleLessons) {
     articleList.append(
-      actionCard(article.title, "Article lesson", [
-        { label: "Study article", action: () => openStudyHtml({ title: article.title, meta: `${topic.name} | Article`, path: article.htmlPath || article.jsonPath, notesKey: `article:${article.htmlPath || article.jsonPath}`, topicId: topic.id, trackKey: "articles" }) },
+      actionCard(article.title, buildSpecSubtitle(getEntitySpecTag(article, topic), "Article lesson"), [
+        { label: "Study article", action: () => openStudyHtml({ title: article.title, meta: `${topic.name} | Article`, path: article.htmlPath || article.jsonPath, notesKey: `article:${article.htmlPath || article.jsonPath}`, topicId: topic.id, trackKey: "articles", specTag: getEntitySpecTag(article, topic), specCodeLabel: getEntitySpecLabel(article, topic) }) },
       ]),
     );
   }
@@ -2020,10 +1880,16 @@ async function openVideoStudy(topic, video, extraActions = []) {
     kind: "video",
     title: video.title,
     meta: `${topic.name} | ${video.kind}`,
+    specTag: getEntitySpecTag(video, topic),
+    specCodeLabel: getEntitySpecLabel(video, topic),
     notesKey: `topic:${topic.id}:video:${video.videoPath || video.htmlPath || video.title}`,
     topicId: topic.id,
     reopenRef: {
       type: "video",
+      title: video.title,
+      meta: `${topic.name} | ${video.kind}`,
+      specTag: getEntitySpecTag(video, topic),
+      specCodeLabel: getEntitySpecLabel(video, topic),
       topicId: topic.id,
       videoPath: video.videoPath || null,
       htmlPath: video.htmlPath || null,
@@ -2049,12 +1915,16 @@ async function openQuizStudyNotes(topic, quiz, extraActions = []) {
     kind: "html",
     title: getQuizLabel(topic, quiz),
     meta: `${topic.name} | Quiz notes and explanation`,
+    specTag: getEntitySpecTag(quiz, topic),
+    specCodeLabel: getEntitySpecLabel(quiz, topic),
     notesKey: `topic:${topic.id}:quiznotes:${quiz.jsonPath}`,
     topicId: topic.id,
     reopenRef: {
       type: "html",
       title: getQuizLabel(topic, quiz),
       meta: `${topic.name} | Quiz notes and explanation`,
+      specTag: getEntitySpecTag(quiz, topic),
+      specCodeLabel: getEntitySpecLabel(quiz, topic),
       path: quiz.htmlPath || quiz.jsonPath,
       notesKey: `topic:${topic.id}:quiznotes:${quiz.jsonPath}`,
       topicId: topic.id,
@@ -2069,7 +1939,7 @@ async function openQuizStudyNotes(topic, quiz, extraActions = []) {
   });
 }
 
-async function openStudyHtml({ title, meta, path, notesKey, topicId, trackKey, reopenRef = null, extraActions = [] }) {
+async function openStudyHtml({ title, meta, path, notesKey, topicId, trackKey, reopenRef = null, extraActions = [], specTag = "", specCodeLabel = "" }) {
   if (topicId) {
     const module = findModuleByTopicId(topicId);
     if (module) openModuleView(module);
@@ -2088,6 +1958,8 @@ async function openStudyHtml({ title, meta, path, notesKey, topicId, trackKey, r
     kind: "html",
     title,
     meta,
+    specTag,
+    specCodeLabel,
     notesKey,
     topicId,
     reopenRef,
@@ -2232,9 +2104,9 @@ function setStudySession(session) {
           <nav class="breadcrumb-nav">
             <a href="#module/${encodeURIComponent(module.id)}" class="breadcrumb-link">${escapeHtml(module.title)}</a>
             <span class="breadcrumb-separator">/</span>
-            <span class="breadcrumb-text" style="color: var(--ink-soft);">${escapeHtml(topic.section)}</span>
+            <span class="breadcrumb-text" style="color: var(--ink-soft);">${escapeHtml(topic.specSectionLabel || topic.section)}</span>
             <span class="breadcrumb-separator">/</span>
-            <span class="breadcrumb-text" style="color: var(--ink); font-weight: 700;">${escapeHtml(topic.name)}</span>
+            <span class="breadcrumb-text" style="color: var(--ink); font-weight: 700;">${escapeHtml(session.specCodeLabel ? `${session.specCodeLabel} ${session.title}` : topic.specCodeLabel ? `${topic.specCodeLabel} ${topic.name}` : topic.name)}</span>
           </nav>
         `;
       } else {
@@ -2245,7 +2117,15 @@ function setStudySession(session) {
     }
   }
   studyTitle.textContent = session.title;
-  studyMeta.textContent = session.meta;
+  if (session.topicId) {
+    const topic = findTopicById(session.topicId);
+    const sessionSpecTag = session.specTag || topic?.specTag || "";
+    studyMeta.textContent = sessionSpecTag && !String(session.meta || "").startsWith(sessionSpecTag)
+      ? `${sessionSpecTag} | ${session.meta}`
+      : session.meta;
+  } else {
+    studyMeta.textContent = session.meta;
+  }
   renderStudyActions(session.actions || []);
   studyContent.innerHTML = "";
   studyContent.append(session.content);
@@ -2256,7 +2136,7 @@ function setStudySession(session) {
     state.progress.lastStudy = {
       ...session.reopenRef,
       title: session.title,
-      meta: session.meta,
+      meta: studyMeta.textContent,
       savedAt: new Date().toISOString(),
     };
     saveProgress();
