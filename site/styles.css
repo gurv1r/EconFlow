@@ -921,6 +921,27 @@ details[open] > .module-details-head::after {
   gap: 16px;
 }
 
+.study-order-banner {
+  margin-bottom: 16px;
+  padding: 18px 20px;
+  border: 1px solid rgba(74, 222, 128, 0.22);
+  border-radius: 22px;
+  background: linear-gradient(135deg, rgba(0, 167, 111, 0.12) 0%, rgba(32, 101, 209, 0.08) 100%);
+  box-shadow: 0 14px 28px rgba(17, 24, 39, 0.08);
+}
+
+.study-order-banner h4 {
+  margin: 0 0 8px;
+  font-size: 1.2rem;
+  font-family: "Source Serif 4", serif;
+}
+
+.study-order-banner p:last-child {
+  margin: 0;
+  color: var(--ink-soft);
+  line-height: 1.6;
+}
+
 .section-card {
   border: 1px solid var(--line);
   border-radius: 22px;
@@ -995,6 +1016,16 @@ details[open] > .section-card-head::after {
   padding: 0 18px 18px;
 }
 
+.section-order-hint {
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+
 .section-topic-list {
   display: grid;
   gap: 12px;
@@ -1027,6 +1058,12 @@ details[open] > .section-card-head::after {
   gap: 6px;
 }
 
+.section-topic-order {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .section-topic-label {
   font-weight: 700;
   font-size: 1rem;
@@ -1036,6 +1073,42 @@ details[open] > .section-card-head::after {
   color: var(--ink-soft);
   font-size: 0.92rem;
   line-height: 1.5;
+}
+
+.topic-order-pill,
+.topic-guidance-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.topic-order-pill {
+  border: 1px solid rgba(74, 222, 128, 0.2);
+  background: rgba(74, 222, 128, 0.08);
+  color: #86efac;
+}
+
+.topic-guidance-pill {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--ink);
+}
+
+.topic-guidance-pill.is-next {
+  border-color: rgba(74, 222, 128, 0.28);
+  background: rgba(0, 167, 111, 0.16);
+  color: #d1fae5;
+}
+
+.topic-guidance-pill.is-done {
+  border-color: rgba(0, 167, 111, 0.2);
+  background: rgba(0, 167, 111, 0.1);
+  color: #86efac;
 }
 
 .topic-checkmark {

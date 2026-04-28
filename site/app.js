@@ -1,44 +1,17 @@
-const STORAGE_KEY = "uplearn-econ-progress-v3";
-const DAY_MS = 24 * 60 * 60 * 1000;
-const FIREBASE_SDK_VERSION = "12.12.1";
-const CLOUD_PROGRESS_DOC_ID = "default";
-const PAPER_GUIDANCE = {
-  "Paper 1": "Microeconomics focus: chains of reasoning, diagrams, and market failure evaluation.",
-  "Paper 2": "Macroeconomics focus: AD/AS logic, policy trade-offs, and real-world performance data.",
-  "Paper 3": "Synoptic focus: connect micro and macro ideas, compare options, and sustain evaluation.",
-};
-const SPEC_BLUEPRINT = {
-  "14": {
-    theme: "Theme 1: Introduction to Markets and Market Failure",
-    papers: ["Paper 1", "Paper 3"],
-    official: ["Nature of economics", "How markets work", "Market failure", "Government intervention"],
-    revision: ["Nature of Economics", "How Markets Work", "Market Failure", "Government Intervention"],
-  },
-  "15": {
-    theme: "Theme 2: The UK Economy - Performance and Policies",
-    papers: ["Paper 2", "Paper 3"],
-    official: ["Measures of economic performance", "Aggregate demand", "Aggregate supply", "National income", "Economic growth", "Macroeconomic objectives and policy"],
-    revision: ["Measures of Economic Performance", "Aggregate Demand", "Aggregate Supply", "National Income", "Economic Growth", "Macroeconomic Objectives and Policies"],
-  },
-  "16": {
-    theme: "Theme 3: Business Behaviour and the Labour Market",
-    papers: ["Paper 1", "Paper 3"],
-    official: ["Business growth", "Business objectives", "Revenues, costs and profits", "Market structures", "Labour market", "Government intervention"],
-    revision: ["Business Growth", "Business Objectives", "Revenues, Costs & Profits", "Market Structures", "Labour Market", "Government Intervention"],
-  },
-  "17": {
-    theme: "Theme 4: A Global Perspective",
-    papers: ["Paper 2", "Paper 3"],
-    official: ["International economics", "Poverty and inequality", "Emerging and developing economies", "The financial sector", "Role of the state in the macroeconomy"],
-    revision: ["International Economics", "Poverty & Inequality", "Emerging & Developing Economies", "The Financial Sector", "Role of the State in the Macroeconomy"],
-  },
-};
+import { CLOUD_PROGRESS_DOC_ID, DAY_MS, FIREBASE_SDK_VERSION, PAPER_GUIDANCE, SPEC_BLUEPRINT } from "./js/config/constants.js";
+import { archiveUrl, getCatalogUrl } from "./js/config/env.js";
+import { createArchiveResourceLoader } from "./js/services/archive-resources.js";
+import { getCloudConfig, hasFirebaseConfig } from "./js/services/cloud-config.js";
+import { createEmptyProgress, getProgressTimestamp, isProgressEmpty, loadStoredProgress, saveStoredProgress } from "./js/services/progress-storage.js";
+import { elements } from "./js/ui/dom.js";
+import { getAdjacentTopicVideos, getQuizLabel, getQuizMetricLabel, getVideoLabel } from "./js/utils/labels.js";
+import { escapeHtml, formatQuizText, normalizeLooseString, normalizeQuizHtmlFragment, sanitizeRichText, stripHtml } from "./js/utils/text.js";
 
 const state = {
   catalog: null,
   filteredModules: [],
   currentModuleId: null,
-  progress: loadProgress(),
+  progress: loadStoredProgress(),
   quizSession: null,
   flashcardSession: null,
   studySession: null,
@@ -56,82 +29,7 @@ const state = {
   },
 };
 
-const LOCAL_ARCHIVE_ROOT = new URL("../", window.location.href).toString();
-const HOSTED_ARCHIVE_ROOT = "https://storage.googleapis.com/uplearn-economics-study-dashboard-assets-260426/";
-const LOCAL_ARCHIVE_HOSTNAMES = new Set(["127.0.0.1", "localhost"]);
-
-function getArchiveRoot() {
-  return LOCAL_ARCHIVE_HOSTNAMES.has(window.location.hostname) ? LOCAL_ARCHIVE_ROOT : HOSTED_ARCHIVE_ROOT;
-}
-
-function archiveUrl(path) {
-  if (!path) return null;
-  const normalized = String(path).replaceAll("\\", "/").replace(/^\/+/, "");
-  const encoded = normalized
-    .split("/")
-    .map((segment) => encodeURIComponent(segment))
-    .join("/");
-  return new URL(encoded, getArchiveRoot()).toString();
-}
-
-function getVideoLabel(video, fallbackIndex = null) {
-  if (video?.displayTitle) return video.displayTitle;
-  const order = Number(video?.displayOrder);
-  const title = String(video?.title || "").trim();
-  if (Number.isFinite(order) && order > 0) return title ? `Video ${order} - ${title}` : `Video ${order}`;
-  if (fallbackIndex != null) return title ? `Video ${fallbackIndex + 1} - ${title}` : `Video ${fallbackIndex + 1}`;
-  return title ? `Video - ${title}` : "Video";
-}
-
-function getQuizBaseTitle(quiz) {
-  return String(quiz?.title || "").replace(/^Quiz:\s*/i, "").trim() || "Quiz";
-}
-
-function getQuizIndex(topic, quiz, fallbackIndex = null) {
-  const index = topic?.quizzes?.findIndex((candidate) => candidate.jsonPath === quiz?.jsonPath) ?? -1;
-  return index >= 0 ? index : fallbackIndex;
-}
-
-function getQuizDuplicateIndex(topic, quiz) {
-  const baseTitle = getQuizBaseTitle(quiz).toLowerCase();
-  const matches = (topic?.quizzes || []).filter((candidate) => getQuizBaseTitle(candidate).toLowerCase() === baseTitle);
-  if (matches.length <= 1) return null;
-  const position = matches.findIndex((candidate) => candidate.jsonPath === quiz?.jsonPath);
-  return position >= 0 ? { position: position + 1, total: matches.length } : null;
-}
-
-function getQuizLabel(topic, quiz, fallbackIndex = null) {
-  const index = getQuizIndex(topic, quiz, fallbackIndex);
-  const prefix = index != null && index >= 0 ? `Quiz ${index + 1}` : "Quiz";
-  const baseTitle = getQuizBaseTitle(quiz);
-  const duplicate = getQuizDuplicateIndex(topic, quiz);
-  const duplicateSuffix = duplicate ? ` (set ${duplicate.position})` : "";
-  return `${prefix} - ${baseTitle}${duplicateSuffix}`;
-}
-
-function getQuizMetricLabel(topic, quiz, fallbackIndex = null) {
-  const questionLabel = `${quiz.questionCount} question${quiz.questionCount === 1 ? "" : "s"}`;
-  return `${getQuizLabel(topic, quiz, fallbackIndex)} | ${questionLabel}`;
-}
-
-function getVideoIdentity(video) {
-  return `${video?.videoPath || ""}::${video?.htmlPath || ""}::${video?.title || ""}`;
-}
-
-function getTopicVideoIndex(topic, video) {
-  const targetIdentity = getVideoIdentity(video);
-  return topic?.videos?.findIndex((candidate) => getVideoIdentity(candidate) === targetIdentity) ?? -1;
-}
-
-function getAdjacentTopicVideos(topic, video) {
-  const index = getTopicVideoIndex(topic, video);
-  if (index < 0) return { index: -1, previousVideo: null, nextVideo: null };
-  return {
-    index,
-    previousVideo: topic.videos[index - 1] || null,
-    nextVideo: topic.videos[index + 1] || null,
-  };
-}
+const { fetchJson, fetchStudyHtml } = createArchiveResourceLoader(state.resourceCache);
 
 function isTypingTarget(target) {
   if (!(target instanceof HTMLElement)) return false;
@@ -272,123 +170,122 @@ async function fetchChunk(url, offset, size = 1024 * 1024) {
   return response.arrayBuffer();
 }
 
-const searchInput = document.getElementById("searchInput");
-const yearFilter = document.getElementById("yearFilter");
-const moduleFilter = document.getElementById("moduleFilter");
-const appBrand = document.querySelector(".app-brand");
-const coursesNavLink = document.querySelector('.app-nav-link[href="#resultTitle"]');
-const todayNavLink = document.querySelector('.app-nav-link[href="#todayTitle"]');
-const studyNavLink = document.querySelector('.app-nav-link[href="#studyTitle"]');
-const resumeStudyBtn = document.getElementById("resumeStudyBtn");
-const studyStageSelect = document.getElementById("studyStageSelect");
-const coveredOnlyToggle = document.getElementById("coveredOnlyToggle");
-const allowFutureToggle = document.getElementById("allowFutureToggle");
-const statsGrid = document.getElementById("statsGrid");
-const moduleList = document.getElementById("moduleList");
-const pageShell = document.querySelector(".page-shell");
-const appSidebar = document.querySelector(".sidebar");
-const heroSection = document.querySelector(".hero");
-const resultsHeader = document.querySelector(".results-header");
-const dashboardDetails = document.querySelector(".dashboard-details");
-const moduleView = document.getElementById("moduleView");
-const moduleViewTitle = document.getElementById("moduleViewTitle");
-const moduleViewMeta = document.getElementById("moduleViewMeta");
-const moduleViewActions = document.getElementById("moduleViewActions");
-const moduleViewStats = document.getElementById("moduleViewStats");
-const moduleViewTopicsTitle = document.getElementById("moduleViewTopicsTitle");
-const moduleViewTopicsMeta = document.getElementById("moduleViewTopicsMeta");
-const moduleViewSections = document.getElementById("moduleViewSections");
-const moduleViewExamList = document.getElementById("moduleViewExamList");
-const moduleViewDefinitionList = document.getElementById("moduleViewDefinitionList");
-const resultTitle = document.getElementById("resultTitle");
-const resultMeta = document.getElementById("resultMeta");
-const progressTitle = document.getElementById("progressTitle");
-const progressMeta = document.getElementById("progressMeta");
-const dueTitle = document.getElementById("dueTitle");
-const dueMeta = document.getElementById("dueMeta");
-const focusTitle = document.getElementById("focusTitle");
-const focusMeta = document.getElementById("focusMeta");
-const dueList = document.getElementById("dueList");
-const weakTopicList = document.getElementById("weakTopicList");
-const todayTitle = document.getElementById("todayTitle");
-const todayMeta = document.getElementById("todayMeta");
-const todayPlanList = document.getElementById("todayPlanList");
-const specMapTitle = document.getElementById("specMapTitle");
-const specMapMeta = document.getElementById("specMapMeta");
-const specMapList = document.getElementById("specMapList");
-const studyTitle = document.getElementById("studyTitle");
-const studyMeta = document.getElementById("studyMeta");
-const studyActions = document.getElementById("studyActions");
-const studyContent = document.getElementById("studyContent");
-const studyLayout = document.querySelector(".study-layout");
-const studyPanelRoot = document.querySelector(".study-panel");
-const notesTitle = document.getElementById("notesTitle");
-const notesMeta = document.getElementById("notesMeta");
-const insertNotePromptBtn = document.getElementById("insertNotePromptBtn");
-const studyNotes = document.getElementById("studyNotes");
-const notesSavedState = document.getElementById("notesSavedState");
-const notesCount = document.getElementById("notesCount");
-const specTitle = document.getElementById("specTitle");
-const specMeta = document.getElementById("specMeta");
-const specTags = document.getElementById("specTags");
-const specChecklist = document.getElementById("specChecklist");
-const notePrompt = document.getElementById("notePrompt");
-const paperTitle = document.getElementById("paperTitle");
-const paperMeta = document.getElementById("paperMeta");
-const paperChecklist = document.getElementById("paperChecklist");
-const paperTimerDisplay = document.getElementById("paperTimerDisplay");
-const paperScoreDisplay = document.getElementById("paperScoreDisplay");
-const startPaperTimerBtn = document.getElementById("startPaperTimerBtn");
-const pausePaperTimerBtn = document.getElementById("pausePaperTimerBtn");
-const resetPaperTimerBtn = document.getElementById("resetPaperTimerBtn");
-const recentNotesList = document.getElementById("recentNotesList");
-const mistakeList = document.getElementById("mistakeList");
-
-const moduleTemplate = document.getElementById("moduleTemplate");
-const topicTemplate = document.getElementById("topicTemplate");
-const exportProgressBtn = document.getElementById("exportProgressBtn");
-const importProgressInput = document.getElementById("importProgressInput");
-const resetProgressBtn = document.getElementById("resetProgressBtn");
-const authPanelTitle = document.getElementById("authPanelTitle");
-const authStatusText = document.getElementById("authStatusText");
-const authForm = document.getElementById("authForm");
-const authSessionPanel = document.getElementById("authSessionPanel");
-const authEmailInput = document.getElementById("authEmailInput");
-const authPasswordInput = document.getElementById("authPasswordInput");
-const signUpBtn = document.getElementById("signUpBtn");
-const logInBtn = document.getElementById("logInBtn");
-const logOutBtn = document.getElementById("logOutBtn");
-const pushCloudBtn = document.getElementById("pushCloudBtn");
-const pullCloudBtn = document.getElementById("pullCloudBtn");
-const authUserBadge = document.getElementById("authUserBadge");
-const cloudSyncBadge = document.getElementById("cloudSyncBadge");
-const startDueReviewBtn = document.getElementById("startDueReviewBtn");
-const startMixedReviewBtn = document.getElementById("startMixedReviewBtn");
-const focusWeakTopicsBtn = document.getElementById("focusWeakTopicsBtn");
-const startTodayPlanBtn = document.getElementById("startTodayPlanBtn");
-
-const quizDialog = document.getElementById("quizDialog");
-const closeQuizBtn = document.getElementById("closeQuizBtn");
-const quizTitle = document.getElementById("quizTitle");
-const quizMeta = document.getElementById("quizMeta");
-const quizScoreboard = document.getElementById("quizScoreboard");
-const quizQuestionMount = document.getElementById("quizQuestionMount");
-const prevQuizBtn = document.getElementById("prevQuizBtn");
-const nextQuizBtn = document.getElementById("nextQuizBtn");
-
-const flashcardDialog = document.getElementById("flashcardDialog");
-const flashcardTitle = document.getElementById("flashcardTitle");
-const flashcardMeta = document.getElementById("flashcardMeta");
-const flashcardMount = document.getElementById("flashcardMount");
-const closeFlashcardBtn = document.getElementById("closeFlashcardBtn");
-const revealFlashcardBtn = document.getElementById("revealFlashcardBtn");
-const flashcardAgainBtn = document.getElementById("flashcardAgainBtn");
-const flashcardHardBtn = document.getElementById("flashcardHardBtn");
-const flashcardGoodBtn = document.getElementById("flashcardGoodBtn");
-const flashcardEasyBtn = document.getElementById("flashcardEasyBtn");
+const {
+  searchInput,
+  yearFilter,
+  moduleFilter,
+  appBrand,
+  coursesNavLink,
+  todayNavLink,
+  studyNavLink,
+  resumeStudyBtn,
+  studyStageSelect,
+  coveredOnlyToggle,
+  allowFutureToggle,
+  statsGrid,
+  moduleList,
+  pageShell,
+  appSidebar,
+  heroSection,
+  resultsHeader,
+  dashboardDetails,
+  moduleView,
+  moduleViewTitle,
+  moduleViewMeta,
+  moduleViewActions,
+  moduleViewStats,
+  moduleViewTopicsTitle,
+  moduleViewTopicsMeta,
+  moduleViewSections,
+  moduleViewExamList,
+  moduleViewDefinitionList,
+  resultTitle,
+  resultMeta,
+  progressTitle,
+  progressMeta,
+  dueTitle,
+  dueMeta,
+  focusTitle,
+  focusMeta,
+  dueList,
+  weakTopicList,
+  todayTitle,
+  todayMeta,
+  todayPlanList,
+  specMapTitle,
+  specMapMeta,
+  specMapList,
+  studyTitle,
+  studyMeta,
+  studyActions,
+  studyContent,
+  studyLayout,
+  studyPanelRoot,
+  notesTitle,
+  notesMeta,
+  insertNotePromptBtn,
+  studyNotes,
+  notesSavedState,
+  notesCount,
+  specTitle,
+  specMeta,
+  specTags,
+  specChecklist,
+  notePrompt,
+  paperTitle,
+  paperMeta,
+  paperChecklist,
+  paperTimerDisplay,
+  paperScoreDisplay,
+  startPaperTimerBtn,
+  pausePaperTimerBtn,
+  resetPaperTimerBtn,
+  recentNotesList,
+  mistakeList,
+  moduleTemplate,
+  topicTemplate,
+  exportProgressBtn,
+  importProgressInput,
+  resetProgressBtn,
+  authPanelTitle,
+  authStatusText,
+  authForm,
+  authSessionPanel,
+  authEmailInput,
+  authPasswordInput,
+  signUpBtn,
+  logInBtn,
+  logOutBtn,
+  pushCloudBtn,
+  pullCloudBtn,
+  authUserBadge,
+  cloudSyncBadge,
+  startDueReviewBtn,
+  startMixedReviewBtn,
+  focusWeakTopicsBtn,
+  startTodayPlanBtn,
+  quizDialog,
+  closeQuizBtn,
+  quizTitle,
+  quizMeta,
+  quizScoreboard,
+  quizQuestionMount,
+  prevQuizBtn,
+  nextQuizBtn,
+  flashcardDialog,
+  flashcardTitle,
+  flashcardMeta,
+  flashcardMount,
+  closeFlashcardBtn,
+  revealFlashcardBtn,
+  flashcardAgainBtn,
+  flashcardHardBtn,
+  flashcardGoodBtn,
+  flashcardEasyBtn,
+} = elements;
 
 async function boot() {
-  const response = await fetch("./catalog.json");
+  const response = await fetch(getCatalogUrl());
   state.catalog = await response.json();
   normalizeProgress();
   syncPreferenceControls();
@@ -511,34 +408,6 @@ function handleStudyNavigation(event) {
   }
 }
 
-function loadProgress() {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || createEmptyProgress();
-  } catch {
-    return createEmptyProgress();
-  }
-}
-
-function createEmptyProgress() {
-  return {
-    version: 3,
-    updatedAt: null,
-    topics: {},
-    quizzes: {},
-    flashcards: {},
-    notes: {},
-    noteIndex: {},
-    examPapers: {},
-    quizReviews: {},
-    lastStudy: null,
-    preferences: {
-      stage: "as",
-      coveredOnly: true,
-      allowFuture: false,
-    },
-  };
-}
-
 function normalizeProgress() {
   if (!state.progress || typeof state.progress !== "object") state.progress = createEmptyProgress();
   state.progress.version ??= 3;
@@ -559,20 +428,8 @@ function normalizeProgress() {
 
 function saveProgress(options = {}) {
   state.progress.updatedAt = new Date().toISOString();
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.progress));
+  saveStoredProgress(state.progress);
   if (!options.skipCloudSync) scheduleCloudSave();
-}
-
-function getCloudConfig() {
-  const root = globalThis.UPLEARN_CLOUD_CONFIG || {};
-  return {
-    enabled: root.enabled !== false,
-    firebase: root.firebase || {},
-  };
-}
-
-function hasFirebaseConfig(config) {
-  return Boolean(config?.apiKey && config?.authDomain && config?.projectId && config?.appId);
 }
 
 function renderCloudUi() {
@@ -668,21 +525,6 @@ async function initCloudLayer() {
     state.cloud.syncLabel = "Unavailable";
     renderCloudUi();
   }
-}
-
-function getProgressTimestamp(progress = state.progress) {
-  return Date.parse(progress?.updatedAt || "") || 0;
-}
-
-function isProgressEmpty(progress = state.progress) {
-  return !Object.keys(progress.topics || {}).length
-    && !Object.keys(progress.quizzes || {}).length
-    && !Object.keys(progress.flashcards || {}).length
-    && !Object.keys(progress.notes || {}).length
-    && !Object.keys(progress.noteIndex || {}).length
-    && !Object.keys(progress.examPapers || {}).length
-    && !Object.keys(progress.quizReviews || {}).length
-    && !progress.lastStudy;
 }
 
 function applyLoadedProgress(progress, options = {}) {
@@ -1042,7 +884,7 @@ function renderModuleView(module) {
   const visibleTopics = module.topics.filter((topic) => topicMatchesSearch(topic));
   const progress = getModuleProgress(module);
   moduleViewTitle.textContent = module.title;
-  moduleViewMeta.textContent = `${module.yearFolder} | ${module.course?.board?.name || "Board unknown"} | ${visibleTopics.length} visible topics`;
+  moduleViewMeta.textContent = `${module.yearFolder} | ${module.course?.board?.name || "Board unknown"} | ${visibleTopics.length} visible topics | Follow the lowest-numbered section and topic first.`;
   moduleViewTopicsTitle.textContent = `Browse ${module.title}`;
   moduleViewTopicsMeta.textContent = visibleTopics.length
     ? `${visibleTopics.reduce((sum, topic) => sum + topic.videos.length, 0)} videos | ${visibleTopics.reduce((sum, topic) => sum + topic.quizzes.length, 0)} quizzes | ${progress.score}% ready`
@@ -1382,11 +1224,25 @@ function renderModules() {
 
 function renderSectionGrid(mount, module, visibleTopics) {
   mount.innerHTML = "";
+  const nextTopic = getTeachingPathCandidate(module);
+  const guidance = document.createElement("article");
+  guidance.className = "study-order-banner";
+  guidance.innerHTML = `
+    <p class="eyebrow">Recommended Order</p>
+    <h4>Move section by section, then follow the topic numbers from top to bottom.</h4>
+    <p>${nextTopic ? `Best next step: ${escapeHtml(nextTopic.subsectionNumber ? `${nextTopic.subsectionNumber}. ` : "")}${escapeHtml(nextTopic.name)}.` : "Open the first incomplete topic in the first visible section to stay in teaching order."}</p>
+  `;
+  mount.append(guidance);
   const grid = document.createElement("div");
   grid.className = "section-grid";
   const grouped = groupTopicsBySection(module, visibleTopics);
-  for (const group of grouped) {
-    grid.append(renderSectionCard(group.section, group.topics));
+  for (const [sectionIndex, group] of grouped.entries()) {
+    grid.append(renderSectionCard(group.section, group.topics, {
+      module,
+      sectionIndex,
+      sectionCount: grouped.length,
+      nextTopicId: nextTopic?.id || null,
+    }));
   }
   mount.append(grid);
 }
@@ -1409,17 +1265,18 @@ function groupTopicsBySection(module, topics) {
   return ordered;
 }
 
-function renderSectionCard(section, topics) {
+function renderSectionCard(section, topics, options = {}) {
   const card = document.createElement("details");
   card.className = "section-card";
   card.dataset.sectionName = section;
   const completedCount = topics.filter((topic) => getTopicProgress(topic).completed).length;
+  const firstIncompleteTopic = topics.find((topic) => !getTopicProgress(topic).completed) || topics[0] || null;
 
   const header = document.createElement("summary");
   header.className = "section-card-head";
   const title = document.createElement("h5");
   title.className = "section-card-title";
-  title.textContent = section;
+  title.textContent = `${options.sectionIndex != null ? `Step ${options.sectionIndex + 1}. ` : ""}${section}`;
   const meta = document.createElement("span");
   meta.className = "metric";
   meta.textContent = `${completedCount}/${topics.length} complete`;
@@ -1428,23 +1285,34 @@ function renderSectionCard(section, topics) {
   headerMain.append(title, meta);
   const summaryMeta = document.createElement("div");
   summaryMeta.className = "section-card-summary-meta";
-  summaryMeta.textContent = `${topics.length} topics ready to revise`;
+  summaryMeta.textContent = firstIncompleteTopic
+    ? `Work topics in ascending order. Start with ${firstIncompleteTopic.subsectionNumber || 1}.`
+    : `${topics.length} topics ready to revise`;
   header.append(headerMain, summaryMeta);
   card.append(header);
 
   const body = document.createElement("div");
   body.className = "section-card-body";
+  const helper = document.createElement("div");
+  helper.className = "section-order-hint";
+  helper.textContent = firstIncompleteTopic
+    ? `Start at the smallest topic number in this section, then continue downward until the section is complete.`
+    : "This section has no visible topics under the current filters.";
   const list = document.createElement("div");
   list.className = "section-topic-list";
-  for (const topic of topics) {
-    list.append(renderSectionTopicButton(topic));
+  for (const [topicIndex, topic] of topics.entries()) {
+    list.append(renderSectionTopicButton(topic, {
+      topicIndex,
+      firstIncompleteTopicId: firstIncompleteTopic?.id || null,
+      nextTopicId: options.nextTopicId || null,
+    }));
   }
-  body.append(list);
+  body.append(helper, list);
   card.append(body);
   return card;
 }
 
-function renderSectionTopicButton(topic) {
+function renderSectionTopicButton(topic, options = {}) {
   const progress = getTopicProgress(topic);
   const article = document.createElement("article");
   article.className = `section-topic-row${progress.completed ? " is-complete" : ""}`;
@@ -1481,9 +1349,32 @@ function renderSectionTopicButton(topic) {
   meta.className = "section-topic-meta";
   meta.textContent = buildTopicRowMeta(topic, progress);
 
+  const orderLine = document.createElement("div");
+  orderLine.className = "section-topic-order";
+  const orderPill = document.createElement("span");
+  orderPill.className = "topic-order-pill";
+  orderPill.textContent = `Order ${topic.subsectionNumber || options.topicIndex + 1}`;
+  orderLine.append(orderPill);
+  if (options.nextTopicId === topic.id) {
+    const nextPill = document.createElement("span");
+    nextPill.className = "topic-guidance-pill is-next";
+    nextPill.textContent = "Next best topic";
+    orderLine.append(nextPill);
+  } else if (options.firstIncompleteTopicId === topic.id && !progress.completed) {
+    const startPill = document.createElement("span");
+    startPill.className = "topic-guidance-pill";
+    startPill.textContent = "Start here";
+    orderLine.append(startPill);
+  } else if (progress.completed) {
+    const donePill = document.createElement("span");
+    donePill.className = "topic-guidance-pill is-done";
+    donePill.textContent = "Completed";
+    orderLine.append(donePill);
+  }
+
   const textWrap = document.createElement("div");
   textWrap.className = "section-topic-text";
-  textWrap.append(label, meta);
+  textWrap.append(orderLine, label, meta);
   head.append(status, textWrap);
 
   const actions = document.createElement("div");
@@ -2707,17 +2598,6 @@ function formatDuration(totalSeconds) {
   return `${h}:${m}:${s}`;
 }
 
-async function fetchStudyHtml(path) {
-  const key = `html:${path}`;
-  if (state.resourceCache.has(key)) return state.resourceCache.get(key);
-  const response = await fetch(archiveUrl(path));
-  if (!response.ok) throw new Error(`Failed to load HTML resource: ${path}`);
-  const text = await response.text();
-  const body = extractBodyHtml(text);
-  state.resourceCache.set(key, body);
-  return body;
-}
-
 function renderQuizStudyNotes(topic, quiz, quizData) {
   const wrap = document.createElement("div");
   wrap.className = "study-view quiz-study-view";
@@ -2813,22 +2693,6 @@ function formatQuizTypeLabel(value) {
     .replace(/([a-z])([A-Z])/g, "$1 $2")
     .replaceAll("_", " ")
     .trim();
-}
-
-async function fetchJson(path) {
-  const key = `json:${path}`;
-  if (state.resourceCache.has(key)) return state.resourceCache.get(key);
-  const response = await fetch(archiveUrl(path));
-  if (!response.ok) throw new Error(`Failed to load JSON resource: ${path}`);
-  const data = await response.json();
-  state.resourceCache.set(key, data);
-  return data;
-}
-
-function extractBodyHtml(html) {
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(html, "text/html");
-  return doc.body?.innerHTML || html;
 }
 
 async function openQuiz(topic, quiz) {
@@ -3400,19 +3264,6 @@ function shuffle(values) {
   return copy;
 }
 
-function normalizeLooseString(value) {
-  return String(value).trim().toLowerCase().replace(/\s+/g, " ");
-}
-
-function escapeHtml(value) {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
-
 function formatQuizPromptHtml(question) {
   const parts = [
     normalizeQuizHtmlFragment(question.stem || ""),
@@ -3422,35 +3273,6 @@ function formatQuizPromptHtml(question) {
   if (uniqueParts.length) return uniqueParts.join("");
   if (question.type === "MultipleInputQuestion") return "";
   return `<p>${escapeHtml(question.type)}</p>`;
-}
-
-function sanitizeRichText(value) {
-  const repaired = repairMojibake(value ?? "");
-  return repaired
-    .replace(/\$\$\\newline\$\$/gi, "<br /><br />")
-    .replace(/\$\$([\s\S]*?)\$\$/g, (_, inner) => {
-      const normalized = normalizeMathishContent(inner);
-      return normalized ? escapeHtml(normalized) : "";
-    })
-    .replace(/\\n/g, "<br />")
-    .replace(/>\s+</g, "> <");
-}
-
-function stripHtml(value) {
-  return String(value).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-}
-
-function normalizeQuizHtmlFragment(value) {
-  const cleaned = sanitizeRichText(value || "")
-    .replace(/(?:<br\s*\/?>\s*){3,}/gi, "<br /><br />")
-    .trim();
-  const textOnly = stripHtml(cleaned).trim();
-  return textOnly ? cleaned : "";
-}
-
-function formatQuizText(value, fallback = "") {
-  const normalized = stripHtml(sanitizeRichText(value || ""));
-  return normalized || fallback;
 }
 
 function quizChoiceLabel(index) {

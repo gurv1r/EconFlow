@@ -37,11 +37,18 @@ This repository does not normally track:
 |   +-- styles.css
 |   +-- app.js
 |   +-- catalog.json
+|   +-- js/
+|   |   +-- config/
+|   |   +-- services/
+|   |   +-- ui/
+|   |   \-- utils/
 |   \-- firebase-config.js
 +-- build_uplearn_site.py
 +-- uplearn_econ_export.py
 +-- serve_uplearn_site.py
 +-- launch_uplearn_site.ps1
++-- scripts/
++-- docs/
 +-- selenium_audit.py
 +-- full_selenium_walkthrough.py
 +-- firestore.rules
@@ -55,7 +62,7 @@ The project has a straightforward pipeline:
 
 1. `uplearn_econ_export.py` exports course data and media into `archive/UpLearn Economics`
 2. `build_uplearn_site.py` reads that archive and writes `site/catalog.json`
-3. `site/app.js` loads `catalog.json` and renders the dashboard
+3. `site/app.js` bootstraps the dashboard and composes the smaller frontend modules under `site/js/`
 4. raw resources are resolved through local archive paths in dev and GCS paths in production
 
 ## Quick Start
@@ -83,6 +90,12 @@ If you need a different local port:
 ```powershell
 $env:UPLEARN_SITE_PORT = "8010"
 python serve_uplearn_site.py
+```
+
+Validate the committed static app before pushing:
+
+```powershell
+python scripts/validate_site.py
 ```
 
 ## Local Archive Expectations
@@ -256,6 +269,21 @@ python selenium_audit.py
 ```powershell
 python full_selenium_walkthrough.py
 ```
+
+## Refactor Notes
+
+The first refactor pass keeps the static Pages deployment model, but splits shared frontend concerns into modules:
+
+- `site/js/config/` for constants and environment-aware archive resolution
+- `site/js/services/` for resource loading, local persistence, and cloud config
+- `site/js/ui/` for DOM lookup
+- `site/js/utils/` for labels and text handling
+
+Additional documentation:
+
+- `docs/architecture.md`
+- `docs/local-dev.md`
+- `docs/deploy.md`
 
 ## Development Notes
 
