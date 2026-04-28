@@ -1,14 +1,14 @@
-# UpLearn Economics Study Dashboard
+# A Level Economics Revision Hub
 
-A local-first revision dashboard for an exported UpLearn Economics archive.
+A local-first revision dashboard for A Level Economics, built from an exported UpLearn Economics archive.
 
-It turns the raw Year 12 and Year 13 course export into a searchable study workspace with:
+The app turns the raw Year 12 and Year 13 course export into a clearer Economics A Level study workspace with:
 
 - module and topic browsing
 - video, quiz, article, and exam-paper access
 - progress tracking
 - flashcard review
-- notes
+- revision notes
 - weak-topic and today-plan suggestions
 - optional Firebase-backed login and sync
 
@@ -16,7 +16,7 @@ It turns the raw Year 12 and Year 13 course export into a searchable study works
 
 This repository tracks:
 
-- the dashboard app in `site/`
+- the A Level Economics dashboard app in `site/`
 - the catalog builder and export scripts
 - deployment and backend config
 - the generated `site/catalog.json`
@@ -62,8 +62,8 @@ The project has a straightforward pipeline:
 
 1. `uplearn_econ_export.py` exports course data and media into `archive/UpLearn Economics`
 2. `build_uplearn_site.py` reads that archive and writes `site/catalog.json`
-3. `site/app.js` bootstraps the dashboard and composes the smaller frontend modules under `site/js/`
-4. raw resources are resolved through local archive paths in dev and GCS paths in production
+3. `site/app.js` bootstraps the revision hub and composes the smaller frontend modules under `site/js/`
+4. raw resources are resolved through local archive paths in development and GCS paths in production
 
 ## Quick Start
 
@@ -141,7 +141,7 @@ The builder currently extracts:
 
 ## Re-Export From UpLearn
 
-If the user explicitly wants a fresh live export:
+If you explicitly need a fresh live export:
 
 ```powershell
 $env:UPLEARN_TOKEN = "<token>"
@@ -213,7 +213,7 @@ If Firebase is not configured, the app stays in local-only mode.
 
 ## GitHub Pages And Hosted Archive
 
-GitHub Pages serves the static dashboard from `site/`.
+GitHub Pages serves the static A Level Economics revision hub from `site/`.
 
 Hosted archive-backed assets are served from Google Cloud Storage:
 
