@@ -38,21 +38,81 @@ export function getQuizMetricLabel(topic, quiz, fallbackIndex = null) {
   return `${getQuizLabel(topic, quiz, fallbackIndex)} | ${questionLabel}`;
 }
 
+function cleanIdentityPart(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
 export function getVideoIdentity(video) {
-  return `${video?.videoPath || ""}::${video?.htmlPath || ""}::${video?.title || ""}`;
+  return [
+    cleanIdentityPart(video?.videoPath),
+    cleanIdentityPart(video?.htmlPath),
+    cleanIdentityPart(video?.path),
+    cleanIdentityPart(video?.title),
+    cleanIdentityPart(video?.displayTitle),
+  ].filter(Boolean).join("::");
+}
+
+function hasSameVideoSource(left, right) {
+  const leftVideoPath = cleanIdentityPart(left?.videoPath);
+  const rightVideoPath = cleanIdentityPart(right?.videoPath);
+  if (leftVideoPath && rightVideoPath && leftVideoPath === rightVideoPath) return true;
+
+  const leftHtmlPath = cleanIdentityPart(left?.htmlPath);
+  const rightHtmlPath = cleanIdentityPart(right?.htmlPath);
+  if (leftHtmlPath && rightHtmlPath && leftHtmlPath === rightHtmlPath) return true;
+
+  const leftPath = cleanIdentityPart(left?.path);
+  const rightPath = cleanIdentityPart(right?.path);
+  if (leftPath && rightPath && leftPath === rightPath) return true;
+
+  return false;
+}
+
+function getVideoOrder(video, fallbackIndex) {
+  const order = Number(video?.displayOrder ?? video?.order ?? video?.index);
+  return Number.isFinite(order) && order > 0 ? order : fallbackIndex + 1;
+}
+
+function getOrderedTopicVideos(topic) {
+  return (topic?.videos || [])
+    .map((video, sourceIndex) => ({ video, sourceIndex, order: getVideoOrder(video, sourceIndex) }))
+    .sort((left, right) => left.order - right.order || left.sourceIndex - right.sourceIndex);
 }
 
 export function getTopicVideoIndex(topic, video) {
+  const orderedVideos = getOrderedTopicVideos(topic);
   const targetIdentity = getVideoIdentity(video);
-  return topic?.videos?.findIndex((candidate) => getVideoIdentity(candidate) === targetIdentity) ?? -1;
+
+  let matchIndex = orderedVideos.findIndex(({ video: candidate }) => hasSameVideoSource(candidate, video));
+  if (matchIndex >= 0) return matchIndex;
+
+  matchIndex = orderedVideos.findIndex(({ video: candidate }) => getVideoIdentity(candidate) === targetIdentity);
+  if (matchIndex >= 0) return matchIndex;
+
+  const targetOrder = getVideoOrder(video, -1);
+  if (targetOrder > 0) {
+    matchIndex = orderedVideos.findIndex(({ order }) => order === targetOrder);
+    if (matchIndex >= 0) return matchIndex;
+  }
+
+  const targetTitle = cleanIdentityPart(video?.title || video?.displayTitle);
+  if (targetTitle) {
+    matchIndex = orderedVideos.findIndex(({ video: candidate }) => {
+      const candidateTitle = cleanIdentityPart(candidate?.title || candidate?.displayTitle);
+      return candidateTitle === targetTitle;
+    });
+  }
+
+  return matchIndex;
 }
 
 export function getAdjacentTopicVideos(topic, video) {
+  const orderedVideos = getOrderedTopicVideos(topic);
   const index = getTopicVideoIndex(topic, video);
   if (index < 0) return { index: -1, previousVideo: null, nextVideo: null };
   return {
     index,
-    previousVideo: topic.videos[index - 1] || null,
-    nextVideo: topic.videos[index + 1] || null,
+    previousVideo: orderedVideos[index - 1]?.video || null,
+    nextVideo: orderedVideos[index + 1]?.video || null,
   };
 }
