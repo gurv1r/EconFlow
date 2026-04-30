@@ -1,4 +1,4 @@
-# Local Development
+# EconFlow Local Development
 
 ## Start the site
 
@@ -14,7 +14,7 @@ http://127.0.0.1:8000/site/
 
 ## Local archive behavior
 
-When the hostname is `127.0.0.1` or `localhost`, the app resolves archive-backed resources from:
+When the hostname is `127.0.0.1` or `localhost`, EconFlow resolves archive-backed resources from:
 
 ```text
 ../archive/UpLearn Economics/...

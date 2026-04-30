@@ -1705,3 +1705,34 @@ select option {
   background: #0b0f19;
   color: #f4f6f8;
 }
+
+.site-footer {
+  border-top: 1px solid var(--line);
+  background: rgba(7, 12, 24, 0.94);
+}
+
+.site-footer-inner {
+  width: min(1360px, calc(100% - 48px));
+  margin: 0 auto;
+  padding: 22px 0 30px;
+}
+
+.site-footer-title {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+}
+
+.site-footer-copy {
+  margin: 8px 0 0;
+  color: var(--ink-muted);
+}
+
+@media (max-width: 760px) {
+  .site-footer-inner {
+    width: min(1360px, calc(100% - 32px));
+  }
+}

@@ -1,6 +1,6 @@
-# A Level Economics Revision Hub
+# EconFlow
 
-A local-first revision dashboard for A Level Economics, built from an exported UpLearn Economics archive.
+EconFlow is a local-first Edexcel A-Level Economics revision dashboard built from an exported UpLearn Economics archive.
 
 The app turns the raw Year 12 and Year 13 course export into a clearer Economics A Level study workspace with:
 
@@ -16,7 +16,7 @@ The app turns the raw Year 12 and Year 13 course export into a clearer Economics
 
 This repository tracks:
 
-- the A Level Economics dashboard app in `site/`
+- the EconFlow dashboard app in `site/`
 - the catalog builder and export scripts
 - deployment and backend config
 - the generated `site/catalog.json`
@@ -62,7 +62,7 @@ The project has a straightforward pipeline:
 
 1. `uplearn_econ_export.py` exports course data and media into `archive/UpLearn Economics`
 2. `build_uplearn_site.py` reads that archive and writes `site/catalog.json`
-3. `site/app.js` bootstraps the revision hub and composes the smaller frontend modules under `site/js/`
+3. `site/app.js` bootstraps EconFlow and composes the smaller frontend modules under `site/js/`
 4. raw resources are resolved through local archive paths in development and GCS paths in production
 
 ## Quick Start
@@ -178,6 +178,8 @@ Local progress is stored in browser `localStorage` under:
 uplearn-econ-progress-v3
 ```
 
+That key is intentionally unchanged so existing local progress carries over into EconFlow without a migration step.
+
 The app stores:
 
 - topic completion and touches
@@ -188,7 +190,7 @@ The app stores:
 - preferences
 - last opened study session
 
-The dashboard includes export/import controls for this progress.
+EconFlow includes export/import controls for this progress.
 
 ## Firebase Login And Sync
 
@@ -213,7 +215,7 @@ If Firebase is not configured, the app stays in local-only mode.
 
 ## GitHub Pages And Hosted Archive
 
-GitHub Pages serves the static A Level Economics revision hub from `site/`.
+GitHub Pages serves the static EconFlow site from `site/`.
 
 Hosted archive-backed assets are served from Google Cloud Storage:
 

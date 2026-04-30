@@ -1,5 +1,6 @@
 import { CLOUD_PROGRESS_DOC_ID, DAY_MS, FIREBASE_SDK_VERSION, PAPER_GUIDANCE, SPEC_BLUEPRINT } from "./js/config/constants.js";
 import { archiveUrl, getCatalogUrl } from "./js/config/env.js";
+import { applySeoContext } from "./js/config/seo.js";
 import { annotateCatalogWithSpec, getSectionSpecSummary } from "./js/config/spec-map.js";
 import { createDashboardFeature } from "./js/features/dashboard.js";
 import { createArchiveResourceLoader } from "./js/services/archive-resources.js";
@@ -304,6 +305,9 @@ const {
 } = dashboardFeature;
 
 async function boot() {
+  applySeoContext();
+  const archiveReadmeLink = document.getElementById("openArchiveReadmeLink");
+  if (archiveReadmeLink) archiveReadmeLink.href = archiveUrl("archive/UpLearn Economics/README.md");
   const response = await fetch(getCatalogUrl());
   state.catalog = annotateCatalogWithSpec(await response.json());
   normalizeProgress();
@@ -868,6 +872,7 @@ function syncRouteToView() {
     studyLayout.hidden = false;
   } else {
     state.currentModuleId = null;
+    applySeoContext();
     pageShell.classList.remove("is-module-view");
     heroSection.hidden = false;
     resultsHeader.hidden = false;
@@ -880,6 +885,7 @@ function syncRouteToView() {
 }
 
 function renderModuleView(module) {
+  applySeoContext({ pageTitle: module.title, sectionTitle: module.specThemeCode || "Module" });
   const visibleTopics = module.topics.filter((topic) => topicMatchesSearch(topic));
   const progress = getModuleProgress(module);
   moduleViewTitle.textContent = module.title;
@@ -2119,11 +2125,17 @@ function setStudySession(session) {
   studyTitle.textContent = session.title;
   if (session.topicId) {
     const topic = findTopicById(session.topicId);
+    const module = topic ? findModuleByTopicId(session.topicId) : null;
+    applySeoContext({
+      pageTitle: session.title,
+      sectionTitle: module?.title || topic?.name || "Study",
+    });
     const sessionSpecTag = session.specTag || topic?.specTag || "";
     studyMeta.textContent = sessionSpecTag && !String(session.meta || "").startsWith(sessionSpecTag)
       ? `${sessionSpecTag} | ${session.meta}`
       : session.meta;
   } else {
+    applySeoContext({ pageTitle: session.title, sectionTitle: "Study" });
     studyMeta.textContent = session.meta;
   }
   renderStudyActions(session.actions || []);
@@ -3106,7 +3118,7 @@ function exportProgress() {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = "uplearn-econ-progress.json";
+  link.download = "econflow-progress.json";
   link.click();
   URL.revokeObjectURL(url);
 }

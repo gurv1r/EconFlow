@@ -1,3 +1,4 @@
+// Keep the legacy key so existing local progress survives the EconFlow rename.
 export const STORAGE_KEY = "uplearn-econ-progress-v3";
 export const DAY_MS = 24 * 60 * 60 * 1000;
 export const FIREBASE_SDK_VERSION = "12.12.1";

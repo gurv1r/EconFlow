@@ -82,7 +82,7 @@ def find_button_by_text(nodes, needle):
 
 
 def main():
-    download_dir = Path(tempfile.mkdtemp(prefix="uplearn-walkthrough-"))
+    download_dir = Path(tempfile.mkdtemp(prefix="econflow-walkthrough-"))
     options = ChromeOptions()
     options.add_argument("--headless=new")
     options.add_argument("--window-size=1440,1800")
@@ -345,7 +345,7 @@ def main():
         export_button = driver.find_element(By.ID, "exportProgressBtn")
         safe_click(driver, export_button)
         time.sleep(1.2)
-        downloaded = list(download_dir.glob("uplearn-econ-progress*.json"))
+        downloaded = list(download_dir.glob("econflow-progress*.json"))
         add_step(
             report,
             "export_progress",

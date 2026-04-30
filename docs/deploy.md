@@ -1,4 +1,4 @@
-# Deploy
+# EconFlow Deploy
 
 ## GitHub Pages
 
@@ -8,7 +8,7 @@ The workflow now performs a validation pass before uploading the `site/` artifac
 
 ## Hosted archive assets
 
-The static app is served from GitHub Pages, while archive-backed assets are served from Google Cloud Storage.
+The EconFlow app is served from GitHub Pages, while archive-backed assets are served from Google Cloud Storage.
 
 Hosted base URL:
 

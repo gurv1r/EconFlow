@@ -3,7 +3,20 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>UpLearn Economics Study Dashboard</title>
+  <!-- TODO: Gemini to generate final SEO title/description/keywords/Open Graph copy. -->
+  <!-- TODO: Gemini to generate final structured-data copy once the production domain is confirmed. -->
+  <title>EconFlow | Edexcel A-Level Economics revision dashboard</title>
+  <meta name="description" content="Edexcel A-Level Economics revision dashboard" />
+  <meta name="keywords" content="" />
+  <meta name="robots" content="index,follow" />
+  <meta property="og:title" content="EconFlow | Edexcel A-Level Economics revision dashboard" />
+  <meta property="og:description" content="Edexcel A-Level Economics revision dashboard" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="EconFlow" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="EconFlow | Edexcel A-Level Economics revision dashboard" />
+  <meta name="twitter:description" content="Edexcel A-Level Economics revision dashboard" />
+  <link rel="canonical" href="./" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2314213d'/%3E%3Cpath d='M17 18h30v6H17zm0 11h30v6H17zm0 11h20v6H17z' fill='%23fca311'/%3E%3C/svg%3E" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -14,8 +27,8 @@
   <header class="app-header">
     <div class="app-header-inner">
       <a class="app-brand" href="./">
-        <span class="app-brand-mark">Up</span>
-        <span class="app-brand-word">LEARN</span>
+        <span class="app-brand-mark">EF</span>
+        <span class="app-brand-word">ECONFLOW</span>
       </a>
       <nav class="app-nav" aria-label="Primary">
         <a class="app-nav-link is-active" href="#resultTitle">Courses</a>
@@ -23,8 +36,8 @@
         <a class="app-nav-link" href="#studyTitle">Study</a>
       </nav>
       <div class="app-actions" aria-hidden="true">
-        <span class="app-icon">?</span>
-        <span class="app-icon">U</span>
+        <span class="app-icon">E</span>
+        <span class="app-icon">F</span>
       </div>
     </div>
   </header>
@@ -32,9 +45,9 @@
   <div class="page-shell">
     <aside class="sidebar">
       <div class="brand">
-        <p class="eyebrow">Local Course Dashboard</p>
-        <h1>UpLearn Economics</h1>
-        <p class="lede">Your exported Year 12 and Year 13 archive, remapped into a cleaner study dashboard.</p>
+        <p class="eyebrow">Edexcel Revision Hub</p>
+        <h1>EconFlow</h1>
+        <p class="lede">Edexcel A-Level Economics revision dashboard for your exported Year 12 and Year 13 archive.</p>
       </div>
 
       <div class="search-panel">
@@ -86,7 +99,7 @@
       <section class="tracking-panel">
         <p class="eyebrow">Progress Vault</p>
         <h3>Stored on this device</h3>
-        <p class="lede">Checks, quiz attempts, and completion state persist locally so you can keep revising.</p>
+        <p class="lede">Checks, quiz attempts, and completion state persist locally so you can keep revising in EconFlow.</p>
         <div class="tracking-actions">
           <button class="button button-ghost" id="exportProgressBtn" type="button">Export progress</button>
           <label class="button button-ghost import-button">
@@ -137,13 +150,13 @@
           <p class="eyebrow">Browse Library</p>
           <h2>Open a module, jump into a topic, and get to the exact resource quickly.</h2>
           <p class="hero-copy">
-            Use the filters on the left, then browse clean module sections with direct topic, video, quiz, flashcard, and paper access.
+            Use the filters on the left, then browse clean module sections with direct topic, video, quiz, flashcard, and paper access in EconFlow.
           </p>
         </div>
         <div class="hero-actions">
           <a class="button" href="#moduleList">Browse modules</a>
           <button class="button button-ghost" id="resumeStudyBtn" type="button" hidden disabled>Resume last study</button>
-          <a class="button" href="https://storage.googleapis.com/uplearn-economics-study-dashboard-assets-260426/archive/UpLearn%20Economics/README.md" target="_blank" rel="noreferrer">Open Archive README</a>
+          <a class="button" id="openArchiveReadmeLink" href="./" target="_blank" rel="noreferrer">Open Archive README</a>
           <a class="button button-ghost" href="./catalog.json" target="_blank" rel="noreferrer">Open Catalog JSON</a>
         </div>
       </section>
@@ -151,7 +164,7 @@
       <section class="results-header">
         <div>
           <p class="eyebrow">Modules</p>
-          <h3 id="resultTitle">Loading archive...</h3>
+          <h3 id="resultTitle">Loading EconFlow library...</h3>
         </div>
         <p id="resultMeta" class="result-meta"></p>
       </section>
@@ -325,6 +338,13 @@
     </main>
   </div>
 
+  <footer class="site-footer">
+    <div class="site-footer-inner">
+      <p class="site-footer-title">EconFlow</p>
+      <p class="site-footer-copy">Edexcel A-Level Economics revision dashboard.</p>
+    </div>
+  </footer>
+
   <template id="moduleTemplate">
     <article class="module-card">
       <div class="module-head">
@@ -401,6 +421,6 @@
   </dialog>
 
   <script src="./firebase-config.js?v=1"></script>
-  <script type="module" src="./app.js?v=9"></script>
+  <script type="module" src="./app.js?v=10"></script>
 </body>
 </html>
