@@ -890,7 +890,7 @@ function renderModuleView(module) {
   const progress = getModuleProgress(module);
   moduleViewTitle.textContent = module.title;
   moduleViewMeta.textContent = `${module.specThemeCode ? `${module.specThemeCode}: ${module.specThemeTitle} | ` : ""}${module.yearFolder} | ${module.course?.board?.name || "Board unknown"} | ${visibleTopics.length} visible topics | Follow the lowest-numbered section and topic first.`;
-  moduleViewTopicsTitle.textContent = `Browse ${module.title}`;
+  moduleViewTopicsTitle.textContent = `Browse A-Level Economics revision topics for ${module.title}`;
   moduleViewTopicsMeta.textContent = visibleTopics.length
     ? `${visibleTopics.reduce((sum, topic) => sum + topic.videos.length, 0)} videos | ${visibleTopics.reduce((sum, topic) => sum + topic.quizzes.length, 0)} quizzes | ${progress.score}% ready`
     : "No topics match the current filters in this module.";

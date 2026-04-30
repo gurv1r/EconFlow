@@ -1,12 +1,12 @@
 const SITE_NAME = "EconFlow";
-const SITE_DESCRIPTION = "Edexcel A-Level Economics revision dashboard";
+const SITE_DESCRIPTION = "Edexcel A-Level Economics revision dashboard featuring notes, questions, and diagrams.";
 
 const SEO_DEFAULTS = {
   siteName: SITE_NAME,
   siteDescription: SITE_DESCRIPTION,
-  defaultTitle: `${SITE_NAME} | ${SITE_DESCRIPTION}`,
-  defaultDescription: SITE_DESCRIPTION,
-  defaultKeywords: "",
+  defaultTitle: `${SITE_NAME} | A-Level Economics Revision, Notes & Questions`,
+  defaultDescription: "Revise A-Level Economics with EconFlow. Study Edexcel topics, economics notes, diagrams, definitions, questions, and exam-focused revision resources in one organised dashboard.",
+  defaultKeywords: "A Level Economics revision, A-Level Economics notes, A-Level Economics questions, A-Level Economics diagrams, Edexcel Economics revision, macroeconomics revision, microeconomics revision",
   structuredDataType: "WebSite",
 };
 

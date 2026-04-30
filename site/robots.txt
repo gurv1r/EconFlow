@@ -1,4 +1,5 @@
 User-agent: *
 Allow: /
 
-# TODO: Gemini to confirm the final production domain before adding an absolute Sitemap URL here.
+# Note: Using econflow.com as placeholder domain. Update before final production deployment.
+Sitemap: https://econflow.com/sitemap.xml
