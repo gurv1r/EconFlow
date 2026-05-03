@@ -1,6 +1,6 @@
 # Agent Guide
 
-This document is the working guide for coding agents on the UpLearn Economics Study Dashboard repository.
+This document is the working guide for coding agents on the EconFlow repository.
 
 ## What This Repo Is
 
@@ -56,7 +56,7 @@ These are normal locally and should not be committed unless the user explicitly 
 
 At the moment this repo may use a local junction:
 
-- `archive -> C:\Users\Gurvir\Documents\2026-04-23-i-have-chrome-open-with-my-2\archive`
+- `archive -> C:\Users\Gurvir\Documents\EconFlow\archive`
 
 Treat that as local environment setup, not repository content.
 
