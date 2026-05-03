@@ -1,6 +1,7 @@
 import { CLOUD_PROGRESS_DOC_ID, DAY_MS, FIREBASE_SDK_VERSION, PAPER_GUIDANCE, SPEC_BLUEPRINT } from "./js/config/constants.js";
 import { archiveUrl, getCatalogUrl } from "./js/config/env.js";
 import { applySeoContext } from "./js/config/seo.js";
+import { createAccessControlFeature } from "./js/features/access-control.js";
 import { annotateCatalogWithSpec, getSectionSpecSummary } from "./js/config/spec-map.js";
 import { createDashboardFeature } from "./js/features/dashboard.js";
 import { initTaskFlow } from "./js/features/task-flow.js";
@@ -24,9 +25,19 @@ const state = {
   cloud: {
     available: false,
     configured: false,
+    authResolved: false,
     auth: null,
     db: null,
     user: null,
+    accessRecord: null,
+    adminRoster: [],
+    adminEmails: [],
+    accessControl: {
+      enabled: true,
+      allowSelfSignup: true,
+      requireApproval: true,
+      allowDevBypassOnLocalhost: true,
+    },
     status: "Local-only progress",
     syncLabel: "Not synced",
     saveTimer: null,
@@ -186,9 +197,15 @@ const {
   studyStageSelect,
   coveredOnlyToggle,
   allowFutureToggle,
+  protectedSidebarContent,
   moduleList,
   pageShell,
   appSidebar,
+  accessGate,
+  accessGateTitle,
+  accessGateText,
+  accessGateActions,
+  protectedMainContent,
   heroSection,
   taskFlowSection,
   taskFlowMount,
@@ -252,6 +269,12 @@ const {
   pullCloudBtn,
   authUserBadge,
   cloudSyncBadge,
+  accessStateBadge,
+  adminAccessPanel,
+  adminAccessMeta,
+  adminAccessSearch,
+  refreshAccessListBtn,
+  adminAccessList,
   startDueReviewBtn,
   startMixedReviewBtn,
   focusWeakTopicsBtn,
@@ -277,6 +300,7 @@ const {
 } = elements;
 
 let taskFlow = null;
+let accessControlFeature = null;
 
 const dashboardFeature = createDashboardFeature({
   state,
@@ -310,6 +334,20 @@ const {
   renderTodayPlan,
 } = dashboardFeature;
 
+accessControlFeature = createAccessControlFeature({
+  state,
+  elements,
+  helpers: {
+    getAccessDocRef: (uid) => state.cloud.firebaseFns.doc(state.cloud.db, "access", uid),
+    getAccessCollectionRef: () => state.cloud.firebaseFns.collection(state.cloud.db, "access"),
+    pullProgressIfAllowed: async () => {
+      if (!accessControlFeature?.isApproved() && !accessControlFeature?.hasDevBypass()) return;
+      await pullCloudProgress(false);
+    },
+    signOutUser: logOutUser,
+  },
+});
+
 async function boot() {
   applySeoContext();
   const archiveReadmeLink = document.getElementById("openArchiveReadmeLink");
@@ -321,7 +359,6 @@ async function boot() {
   seedFlashcards();
   populateFilters();
   bindEvents();
-  renderCloudUi();
   await initCloudLayer();
   taskFlow = initTaskFlow({
     elements: { taskFlowMount, taskFlowSticky },
@@ -347,6 +384,7 @@ async function boot() {
   applyFilters();
   syncRouteToView();
   updateResumeStudyButton();
+  accessControlFeature?.renderAll();
 }
 
 function setupNavSync() {
@@ -489,52 +527,43 @@ function normalizeProgress() {
 function saveProgress(options = {}) {
   state.progress.updatedAt = new Date().toISOString();
   saveStoredProgress(state.progress);
-  if (!options.skipCloudSync) scheduleCloudSave();
+  if (!options.skipCloudSync && (accessControlFeature?.isApproved() || accessControlFeature?.hasDevBypass())) scheduleCloudSave();
 }
 
 function renderCloudUi() {
-  authPanelTitle.textContent = state.cloud.user ? "Cloud sync is active" : "Cloud sync is local-only right now";
-  authStatusText.textContent = state.cloud.status;
-  cloudSyncBadge.textContent = state.cloud.syncLabel;
-  authUserBadge.textContent = state.cloud.user?.email || "Signed out";
-
-  const signedIn = !!state.cloud.user;
-  authForm.hidden = signedIn || !state.cloud.configured;
-  authSessionPanel.hidden = !signedIn;
-
-  const actionDisabled = !signedIn;
-  pushCloudBtn.disabled = actionDisabled;
-  pullCloudBtn.disabled = actionDisabled;
-  logOutBtn.disabled = actionDisabled;
-  signUpBtn.disabled = !state.cloud.configured;
-  logInBtn.disabled = !state.cloud.configured;
+  accessControlFeature?.renderAll();
 }
 
 async function initCloudLayer() {
-  const { enabled, firebase } = getCloudConfig();
+  const { enabled, firebase, adminEmails, accessControl } = getCloudConfig();
   state.cloud.available = enabled;
   state.cloud.configured = enabled && hasFirebaseConfig(firebase);
+  state.cloud.authResolved = !enabled;
+  state.cloud.adminEmails = adminEmails;
+  state.cloud.accessControl = accessControl;
 
   if (!enabled) {
-    state.cloud.status = "Cloud auth is disabled in firebase-config.js.";
+    state.cloud.authResolved = true;
+    state.cloud.status = "Firebase auth is disabled in firebase-config.js.";
     renderCloudUi();
     return;
   }
 
   if (!state.cloud.configured) {
+    state.cloud.authResolved = true;
     state.cloud.status = "Firebase config is missing. Fill in site/firebase-config.js to enable sign up and sync.";
     renderCloudUi();
     return;
   }
 
-  state.cloud.status = "Connecting to Firebase Auth and Firestore...";
+  state.cloud.status = "Checking your saved session...";
   renderCloudUi();
 
   try {
     const [
       { initializeApp },
       { getAuth, setPersistence, browserLocalPersistence, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut },
-      { getFirestore, doc, getDoc, setDoc, serverTimestamp },
+      { getFirestore, doc, getDoc, setDoc, serverTimestamp, collection, getDocs },
     ] = await Promise.all([
       import(`https://www.gstatic.com/firebasejs/${FIREBASE_SDK_VERSION}/firebase-app.js`),
       import(`https://www.gstatic.com/firebasejs/${FIREBASE_SDK_VERSION}/firebase-auth.js`),
@@ -558,22 +587,26 @@ async function initCloudLayer() {
       getDoc,
       setDoc,
       serverTimestamp,
+      collection,
+      getDocs,
     };
 
     onAuthStateChanged(auth, async (user) => {
       try {
+        state.cloud.authResolved = true;
         state.cloud.user = user || null;
         if (!user) {
-          state.cloud.status = "Signed out. Progress still saves locally on this browser.";
+          state.cloud.status = "Signed out. Paid access is locked until an approved account logs in.";
           state.cloud.syncLabel = "Local only";
+          accessControlFeature?.clearAccessState();
           renderCloudUi();
           return;
         }
 
-        state.cloud.status = `Signed in as ${user.email}. Checking cloud save...`;
+        state.cloud.status = `Signed in as ${user.email}. Checking access...`;
         state.cloud.syncLabel = "Syncing";
         renderCloudUi();
-        await pullCloudProgress(false);
+        await accessControlFeature?.refreshAfterAuth();
       } catch (error) {
         state.cloud.status = `Cloud sync error: ${error.message || error}`;
         state.cloud.syncLabel = "Sync failed";
@@ -581,6 +614,7 @@ async function initCloudLayer() {
       }
     });
   } catch (error) {
+    state.cloud.authResolved = true;
     state.cloud.status = `Firebase failed to initialize: ${error.message || error}`;
     state.cloud.syncLabel = "Unavailable";
     renderCloudUi();
@@ -605,6 +639,7 @@ function getCloudProgressDocRef() {
 
 function scheduleCloudSave() {
   if (!state.cloud.user || !state.cloud.db) return;
+  if (!accessControlFeature?.isApproved() && !accessControlFeature?.hasDevBypass()) return;
   clearTimeout(state.cloud.saveTimer);
   state.cloud.syncLabel = "Pending sync";
   renderCloudUi();
@@ -619,6 +654,7 @@ function scheduleCloudSave() {
 
 async function pushCloudProgress(showStatus = false) {
   if (!state.cloud.user || !state.cloud.db) return;
+  if (!accessControlFeature?.isApproved() && !accessControlFeature?.hasDevBypass()) return;
   if (showStatus) {
     state.cloud.status = "Uploading progress to Firestore...";
     state.cloud.syncLabel = "Syncing";
@@ -639,6 +675,7 @@ async function pushCloudProgress(showStatus = false) {
 
 async function pullCloudProgress(showStatus = false) {
   if (!state.cloud.user || !state.cloud.db) return;
+  if (!accessControlFeature?.isApproved() && !accessControlFeature?.hasDevBypass()) return;
   if (showStatus) {
     state.cloud.status = "Checking Firestore progress...";
     state.cloud.syncLabel = "Syncing";
@@ -689,16 +726,21 @@ async function pullCloudProgress(showStatus = false) {
 
 async function signUpWithEmail() {
   if (!state.cloud.configured) return;
+  if (!state.cloud.accessControl?.allowSelfSignup) {
+    state.cloud.status = "Self-signup is disabled. An admin needs to create or approve your account.";
+    renderCloudUi();
+    return;
+  }
   const email = authEmailInput.value.trim();
   const password = authPasswordInput.value;
   if (!email || !password) {
-    state.cloud.status = "Enter an email address and password to create an account.";
+    state.cloud.status = "Enter an email address and password to request access.";
     renderCloudUi();
     return;
   }
 
   try {
-    state.cloud.status = "Creating your account...";
+    state.cloud.status = "Creating your account request...";
     renderCloudUi();
     const { createUserWithEmailAndPassword } = state.cloud.firebaseFns;
     await createUserWithEmailAndPassword(state.cloud.auth, email, password);
@@ -2764,6 +2806,13 @@ function renderMultipleChoice(question, answerState, multi) {
     text.innerHTML = `<strong>${escapeHtml(formatQuizText(option.text || "", quizChoiceLabel(index)))}</strong>`;
     if (option.image) text.append(createQuizImage(option.image, formatQuizText(option.text || "", quizChoiceLabel(index)), "quiz-option-image"));
     if (shouldShowOptionExplanation(question, answerState, index, multi)) {
+      const explanationState = getOptionExplanationState(question, answerState, index, multi);
+      if (explanationState) {
+        const key = document.createElement("span");
+        key.className = `quiz-option-key ${explanationState.className}`;
+        key.textContent = explanationState.label;
+        text.append(key);
+      }
       if (option.explanation) {
         const explanation = document.createElement("span");
         explanation.className = "quiz-option-explanation";
@@ -3343,6 +3392,32 @@ function shouldShowOptionExplanation(question, answerState, index, multi) {
   if (isOptionSelected(answerState, index, multi)) return true;
   if (multi) return answerState.correct === false && question.raw.options?.[index]?.correct;
   return answerState.correct === false && question.raw.correctOptionIndex === index;
+}
+
+function getOptionExplanationState(question, answerState, index, multi) {
+  if (!hasQuizAnswerValue(answerState)) return null;
+
+  if (multi) {
+    const selected = isOptionSelected(answerState, index, multi);
+    const correct = Boolean(question.raw.options?.[index]?.correct);
+    if (selected && correct) return { label: "Correct", className: "is-correct" };
+    if (selected && !correct) return { label: "Incorrect", className: "is-wrong" };
+    if (answerState.correct === false && correct) return { label: "Correct answer", className: "is-correct" };
+    return null;
+  }
+
+  if (question.raw.correctOptionIndex === index) {
+    return {
+      label: answerState.correct === true ? "Correct" : "Correct answer",
+      className: "is-correct",
+    };
+  }
+
+  if (isOptionSelected(answerState, index, multi) && answerState.correct === false) {
+    return { label: "Incorrect", className: "is-wrong" };
+  }
+
+  return null;
 }
 
 function buildOptionCardClass(question, answerState, index, multi) {

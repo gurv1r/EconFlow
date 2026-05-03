@@ -2,8 +2,55 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function accessDoc(userId) {
+      return get(/databases/$(database)/documents/access/$(userId));
+    }
+
+    function isSelf(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    function isBootstrapAdmin() {
+      // Keep this in sync with site/firebase-config.js adminEmails.
+      return signedIn() && request.auth.token.email != null
+        && request.auth.token.email in [];
+    }
+
+    function isAdmin() {
+      return signedIn() && (
+        isBootstrapAdmin()
+        || (
+          accessDoc(request.auth.uid).data.approved == true
+          && accessDoc(request.auth.uid).data.role == "admin"
+        )
+      );
+    }
+
+    function isApprovedUser(userId) {
+      return isSelf(userId) && accessDoc(userId).data.approved == true;
+    }
+
+    match /access/{userId} {
+      allow read: if isSelf(userId) || isAdmin();
+      allow create: if isSelf(userId)
+        && request.resource.data.email == request.auth.token.email
+        && (
+          (request.resource.data.approved == false
+            && request.resource.data.role == "student"
+            && request.resource.data.plan == "pending")
+          || (isBootstrapAdmin()
+            && request.resource.data.approved == true
+            && request.resource.data.role == "admin")
+        );
+      allow update, delete: if isAdmin();
+    }
+
     match /users/{userId}/progress/{docId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if isApprovedUser(userId);
     }
   }
 }

@@ -34,7 +34,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800;900&display=swap" rel="stylesheet">
   <script src="./js/theme.js"></script>
-  <link rel="stylesheet" href="./styles.css?v=6" />
+  <link rel="stylesheet" href="./styles.css?v=7" />
 </head>
 <body>
   <header class="app-header">
@@ -64,6 +64,7 @@
         <p class="lede">The ultimate A-Level Economics revision dashboard. Access Edexcel notes, practice questions, and diagrams from your exported Year 12 and Year 13 archive.</p>
       </div>
 
+      <div id="protectedSidebarContent">
       <div class="search-panel">
         <label class="field">
           <span>Search</span>
@@ -123,11 +124,12 @@
           <button class="button button-ghost danger-button" id="resetProgressBtn" type="button">Reset progress</button>
         </div>
       </section>
+      </div>
 
       <section class="tracking-panel">
-        <p class="eyebrow">Account & Sync</p>
-        <h3 id="authPanelTitle">Cloud sync is local-only right now</h3>
-        <p class="lede" id="authStatusText">Add your Firebase web config to enable sign up, log in, and cross-device progress sync.</p>
+        <p class="eyebrow">Access Control</p>
+        <h3 id="authPanelTitle">Sign in to unlock EconFlow</h3>
+        <p class="lede" id="authStatusText">Use Firebase auth and approval controls to manage who can access the revision dashboard.</p>
 
         <form class="auth-form" id="authForm">
           <label class="field">
@@ -139,7 +141,7 @@
             <input id="authPasswordInput" type="password" placeholder="At least 6 characters" autocomplete="current-password" />
           </label>
           <div class="tracking-actions">
-            <button class="button" id="signUpBtn" type="button">Sign up</button>
+            <button class="button" id="signUpBtn" type="button">Request access</button>
             <button class="button button-ghost" id="logInBtn" type="button">Log in</button>
           </div>
         </form>
@@ -148,6 +150,7 @@
           <div class="study-sidebar-meta">
             <span class="metric" id="authUserBadge">Signed out</span>
             <span class="metric" id="cloudSyncBadge">Not synced</span>
+            <span class="metric" id="accessStateBadge">Locked</span>
           </div>
           <div class="tracking-actions">
             <button class="button" id="pushCloudBtn" type="button">Sync now</button>
@@ -155,10 +158,34 @@
             <button class="button button-ghost" id="logOutBtn" type="button">Log out</button>
           </div>
         </div>
+
+        <div class="auth-session" id="adminAccessPanel" hidden>
+          <div>
+            <p class="eyebrow">Admin Access Panel</p>
+            <h3>Approve paid accounts</h3>
+            <p id="adminAccessMeta" class="result-meta">Review pending and active users before they can open the dashboard.</p>
+          </div>
+          <label class="field">
+            <span>Search accounts</span>
+            <input id="adminAccessSearch" type="search" placeholder="Search by email or status..." />
+          </label>
+          <div class="tracking-actions">
+            <button class="button button-ghost" id="refreshAccessListBtn" type="button">Refresh access list</button>
+          </div>
+          <div id="adminAccessList" class="card-list"></div>
+        </div>
       </section>
     </aside>
 
     <main class="main">
+      <section id="accessGate" class="planner-card access-gate" hidden>
+        <p class="eyebrow">Member Access</p>
+        <h2 id="accessGateTitle">Sign in to access paid revision</h2>
+        <p id="accessGateText" class="hero-copy">Only approved student accounts can open the EconFlow dashboard, quizzes, and study workspace.</p>
+        <div id="accessGateActions" class="hero-actions"></div>
+      </section>
+
+      <div id="protectedMainContent">
       <section class="hero">
         <div>
           <p class="eyebrow">A-Level Economics Revision</p>
@@ -353,6 +380,7 @@
           </article>
         </aside>
       </section>
+      </div>
     </main>
   </div>
 
@@ -440,7 +468,7 @@
     </div>
   </dialog>
 
-  <script src="./firebase-config.js?v=1"></script>
-  <script type="module" src="./app.js?v=10"></script>
+  <script src="./firebase-config.js?v=2"></script>
+  <script type="module" src="./app.js?v=11"></script>
 </body>
 </html>

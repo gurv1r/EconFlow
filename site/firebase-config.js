@@ -1,12 +1,20 @@
 globalThis.UPLEARN_CLOUD_CONFIG = {
-  enabled: false,
+  enabled: true,
+  adminEmails: [],
+  accessControl: {
+    enabled: true,
+    allowSelfSignup: true,
+    requireApproval: true,
+    allowDevBypassOnLocalhost: true,
+  },
   firebase: {
-    apiKey: "",
-    authDomain: "",
-    projectId: "",
-    appId: "",
-    messagingSenderId: "",
-    storageBucket: "",
+    apiKey: "AIzaSyB_ovJny8bFormILSllh_VoS5LJhawWK7E",
+    authDomain: "uplearn-econ-dash-260426.firebaseapp.com",
+    projectId: "uplearn-econ-dash-260426",
+    appId: "1:456002760868:web:45a07716b0088032e2b631",
+    messagingSenderId: "456002760868",
+    storageBucket: "uplearn-econ-dash-260426.firebasestorage.app",
+    measurementId: "G-4L5GTEJ417",
   },
 };
 
