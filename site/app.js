@@ -340,6 +340,20 @@ accessControlFeature = createAccessControlFeature({
   helpers: {
     getAccessDocRef: (uid) => state.cloud.firebaseFns.doc(state.cloud.db, "access", uid),
     getAccessCollectionRef: () => state.cloud.firebaseFns.collection(state.cloud.db, "access"),
+    clearProtectedUi: () => {
+      state.quizSession = null;
+      state.flashcardSession = null;
+      if (quizDialog?.open) quizDialog.close();
+      if (flashcardDialog?.open) flashcardDialog.close();
+      clearStudyWorkspace();
+      if (window.location.hash) {
+        history.replaceState("", document.title, `${window.location.pathname}${window.location.search}`);
+      }
+      state.currentModuleId = null;
+      moduleView.hidden = true;
+      studyLayout.hidden = true;
+      pageShell.classList.remove("is-module-view");
+    },
     pullProgressIfAllowed: async () => {
       if (!accessControlFeature?.isApproved() && !accessControlFeature?.hasDevBypass()) return;
       await pullCloudProgress(false);

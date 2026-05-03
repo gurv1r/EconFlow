@@ -54,6 +54,7 @@ export function createAccessControlFeature({ state, elements, helpers }) {
   const {
     getAccessDocRef,
     getAccessCollectionRef,
+    clearProtectedUi,
     signOutUser,
   } = helpers
   let lastLockedState = null
@@ -438,6 +439,7 @@ export function createAccessControlFeature({ state, elements, helpers }) {
 
   function renderAll() {
     const allowed = !isLockedOut()
+    if (!allowed) clearProtectedUi?.()
     setProtectedVisibility(allowed)
     pageShell?.classList.toggle("is-access-state", !allowed)
     if (!allowed && lastLockedState !== true && state.cloud.authResolved) {
