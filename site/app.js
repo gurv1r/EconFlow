@@ -8,7 +8,7 @@ import { createArchiveResourceLoader } from "./js/services/archive-resources.js"
 import { getCloudConfig, hasFirebaseConfig } from "./js/services/cloud-config.js";
 import { createEmptyProgress, getProgressTimestamp, isProgressEmpty, loadStoredProgress, saveStoredProgress } from "./js/services/progress-storage.js";
 import { elements } from "./js/ui/dom.js";
-import { getAdjacentTopicVideos, getQuizLabel, getQuizMetricLabel, getVideoLabel } from "./js/utils/labels.js";
+import { getAdjacentTopicVideos, getQuizLabel, getQuizMetricLabel, getTopicVideoIndex, getVideoLabel } from "./js/utils/labels.js";
 import { escapeHtml, formatQuizText, normalizeLooseString, normalizeQuizHtmlFragment, sanitizeRichText, stripHtml } from "./js/utils/text.js";
 
 const state = {
