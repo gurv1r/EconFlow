@@ -3,6 +3,7 @@ import { archiveUrl, getCatalogUrl } from "./js/config/env.js";
 import { applySeoContext } from "./js/config/seo.js";
 import { annotateCatalogWithSpec, getSectionSpecSummary } from "./js/config/spec-map.js";
 import { createDashboardFeature } from "./js/features/dashboard.js";
+import { initTaskFlow } from "./js/features/task-flow.js";
 import { createArchiveResourceLoader } from "./js/services/archive-resources.js";
 import { getCloudConfig, hasFirebaseConfig } from "./js/services/cloud-config.js";
 import { createEmptyProgress, getProgressTimestamp, isProgressEmpty, loadStoredProgress, saveStoredProgress } from "./js/services/progress-storage.js";
@@ -189,6 +190,9 @@ const {
   pageShell,
   appSidebar,
   heroSection,
+  taskFlowSection,
+  taskFlowMount,
+  taskFlowSticky,
   resultsHeader,
   dashboardDetails,
   moduleView,
@@ -272,6 +276,8 @@ const {
   flashcardEasyBtn,
 } = elements;
 
+let taskFlow = null;
+
 const dashboardFeature = createDashboardFeature({
   state,
   elements,
@@ -317,6 +323,26 @@ async function boot() {
   bindEvents();
   renderCloudUi();
   await initCloudLayer();
+  taskFlow = initTaskFlow({
+    elements: { taskFlowMount, taskFlowSticky },
+    getRootProgress: () => state.progress,
+    persistRootProgress: () => saveProgress(),
+    getRecommendationTopics,
+    getTeachingPathCandidate,
+    getWeakTopics,
+    getTopicProgress,
+    getQuizProgress,
+    findTopicById,
+    findModuleByTopicId,
+    markTopicConfidence: (topicId, value) => updateTopicCheck(topicId, "confidence", value),
+    openTopicStudy,
+    openQuiz,
+    returnToDashboard: () => {
+      leaveModuleView();
+      taskFlowSection?.scrollIntoView({ behavior: "smooth", block: "start" });
+    },
+    isModuleView: () => !!state.currentModuleId,
+  });
   renderStats(state.catalog.stats);
   applyFilters();
   syncRouteToView();
@@ -443,6 +469,17 @@ function normalizeProgress() {
   state.progress.examPapers ??= {};
   state.progress.quizReviews ??= {};
   state.progress.lastStudy ??= null;
+  state.progress.taskFlow ??= {
+    state: "START",
+    topicId: "",
+    previousTopicId: "",
+    revisionMode: "",
+    confidenceByTopic: {},
+    lastUpdated: null,
+    completedSteps: [],
+    recovery: null,
+    lastIntent: "",
+  };
   state.progress.preferences ??= {};
   state.progress.preferences.stage ??= "as";
   state.progress.preferences.coveredOnly ??= true;
@@ -558,6 +595,7 @@ function applyLoadedProgress(progress, options = {}) {
   saveProgress({ skipCloudSync: options.skipCloudSync ?? true });
   applyFilters();
   updateResumeStudyButton();
+  taskFlow?.renderTaskFlow();
 }
 
 function getCloudProgressDocRef() {
@@ -805,6 +843,7 @@ function applyFilters() {
   renderSpecMap();
   renderRecentNotes();
   renderMistakeList();
+  taskFlow?.renderTaskFlow();
 }
 
 function captureOpenModuleState() {
@@ -865,6 +904,7 @@ function syncRouteToView() {
     renderModuleView(activeModule);
     pageShell.classList.add("is-module-view");
     heroSection.hidden = true;
+    if (taskFlowSection) taskFlowSection.hidden = true;
     resultsHeader.hidden = true;
     moduleList.hidden = true;
     dashboardDetails.hidden = true;
@@ -875,12 +915,14 @@ function syncRouteToView() {
     applySeoContext();
     pageShell.classList.remove("is-module-view");
     heroSection.hidden = false;
+    if (taskFlowSection) taskFlowSection.hidden = false;
     resultsHeader.hidden = false;
     moduleList.hidden = false;
     dashboardDetails.hidden = false;
     moduleView.hidden = true;
     studyLayout.hidden = true;
   }
+  taskFlow?.renderTaskFlow();
   setupNavSync();
 }
 
@@ -1676,11 +1718,14 @@ function getPreferredPaperOrder(module) {
 }
 
 async function openTopicStudy(topic) {
+  taskFlow?.setTopic(topic.id);
+  taskFlow?.setState("STUDY", { completedStep: "STUDY" });
   const module = findModuleByTopicId(topic.id);
   if (module) openModuleView(module);
   const resources = getTopicStudyResources(topic);
   const first = resources[0];
   if (first) await first.open();
+  else taskFlow?.handleMissingContent("content_not_found");
 }
 
 async function openDefinitionStudy(module, group) {
@@ -2588,6 +2633,8 @@ function formatQuizTypeLabel(value) {
 }
 
 async function openQuiz(topic, quiz) {
+  taskFlow?.setTopic(topic.id);
+  taskFlow?.setState("PRACTICE", { completedStep: "PRACTICE" });
   const module = findModuleByTopicId(topic.id);
   if (module) openModuleView(module);
   markTopicTouch(topic.id, "quizzes");
