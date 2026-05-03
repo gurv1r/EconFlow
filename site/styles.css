@@ -28,7 +28,7 @@ body {
   margin: 0;
   min-height: 100vh;
   color: var(--ink);
-  font-family: "Space Grotesk", sans-serif;
+  font-family: "Josefin Sans", sans-serif;
   background:
     radial-gradient(circle at top left, rgba(0, 167, 111, 0.15), transparent 40%),
     radial-gradient(circle at bottom right, rgba(32, 101, 209, 0.15), transparent 40%),
