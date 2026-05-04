@@ -1,6 +1,6 @@
 globalThis.UPLEARN_CLOUD_CONFIG = {
   enabled: true,
-  adminEmails: [],
+  adminEmails: ["gurvirsingh20082001@gmail.com"],
   accessControl: {
     enabled: true,
     allowSelfSignup: true,

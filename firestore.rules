@@ -17,7 +17,7 @@ service cloud.firestore {
     function isBootstrapAdmin() {
       // Keep this in sync with site/firebase-config.js adminEmails.
       return signedIn() && request.auth.token.email != null
-        && request.auth.token.email in [];
+        && request.auth.token.email in ["gurvirsingh20082001@gmail.com"];
     }
 
     function isAdmin() {
