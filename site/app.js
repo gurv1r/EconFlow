@@ -21,6 +21,10 @@ const state = {
   flashcardSession: null,
   studySession: null,
   resourceCache: new Map(),
+  searchIndex: {
+    modules: new Map(),
+    topics: new Map(),
+  },
   paperTimerHandle: null,
   cloud: {
     available: false,
@@ -45,6 +49,8 @@ const state = {
 };
 
 const { fetchJson, fetchStudyHtml } = createArchiveResourceLoader(state.resourceCache);
+let pendingFilterFrame = 0;
+let pendingQuizSaveTimer = 0;
 
 function isTypingTarget(target) {
   if (!(target instanceof HTMLElement)) return false;
@@ -183,6 +189,55 @@ async function fetchChunk(url, offset, size = 1024 * 1024) {
   }
 
   return response.arrayBuffer();
+}
+
+function normalizeSearchQuery(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function queueFilterRefresh() {
+  if (pendingFilterFrame) cancelAnimationFrame(pendingFilterFrame);
+  pendingFilterFrame = requestAnimationFrame(() => {
+    pendingFilterFrame = 0;
+    applyFilters();
+  });
+}
+
+function readInitialFilterState() {
+  const params = new URLSearchParams(window.location.search);
+  return {
+    query: params.get("q") || "",
+    year: params.get("year") || "",
+    moduleId: params.get("module") || "",
+  };
+}
+
+function syncFiltersFromUrl() {
+  const { query, year, moduleId } = readInitialFilterState();
+  searchInput.value = query;
+  if (year && [...yearFilter.options].some((option) => option.value === year)) yearFilter.value = year;
+  if (moduleId && [...moduleFilter.options].some((option) => option.value === moduleId)) moduleFilter.value = moduleId;
+}
+
+function syncUrlFromFilters() {
+  const params = new URLSearchParams(window.location.search);
+  const query = searchInput.value.trim();
+  const year = yearFilter.value;
+  const moduleId = moduleFilter.value;
+
+  if (query) params.set("q", query);
+  else params.delete("q");
+
+  if (year) params.set("year", year);
+  else params.delete("year");
+
+  if (moduleId) params.set("module", moduleId);
+  else params.delete("module");
+
+  const nextQuery = params.toString();
+  const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}${window.location.hash}`;
+  const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  if (nextUrl !== currentUrl) history.replaceState("", document.title, nextUrl);
 }
 
 const {
@@ -372,6 +427,7 @@ async function boot() {
   syncPreferenceControls();
   seedFlashcards();
   populateFilters();
+  syncFiltersFromUrl();
   bindEvents();
   await initCloudLayer();
   taskFlow = initTaskFlow({
@@ -443,11 +499,13 @@ function setupNavSync() {
 function bindEvents() {
   setupNavSync();
   window.addEventListener("hashchange", syncRouteToView);
+  window.addEventListener("beforeunload", flushPendingQuizProgressSave);
   appBrand?.addEventListener("click", handleCoursesNavigation);
   coursesNavLink?.addEventListener("click", handleCoursesNavigation);
   todayNavLink?.addEventListener("click", handleTodayNavigation);
   studyNavLink?.addEventListener("click", handleStudyNavigation);
-  searchInput.addEventListener("input", applyFilters);
+  searchInput.addEventListener("input", queueFilterRefresh);
+  searchInput.addEventListener("search", queueFilterRefresh);
   yearFilter.addEventListener("change", applyFilters);
   moduleFilter.addEventListener("change", applyFilters);
   studyStageSelect.addEventListener("change", updatePreferencesFromControls);
@@ -470,7 +528,10 @@ function bindEvents() {
   startTodayPlanBtn.addEventListener("click", startTodayPlan);
   insertNotePromptBtn.addEventListener("click", insertNotePrompt);
 
-  closeQuizBtn.addEventListener("click", () => quizDialog.close());
+  closeQuizBtn.addEventListener("click", () => {
+    flushPendingQuizProgressSave();
+    quizDialog.close();
+  });
   prevQuizBtn.addEventListener("click", () => moveQuiz(-1));
   nextQuizBtn.addEventListener("click", () => moveQuiz(1));
 
@@ -542,6 +603,21 @@ function saveProgress(options = {}) {
   state.progress.updatedAt = new Date().toISOString();
   saveStoredProgress(state.progress);
   if (!options.skipCloudSync && (accessControlFeature?.isApproved() || accessControlFeature?.hasDevBypass())) scheduleCloudSave();
+}
+
+function queueQuizProgressSave() {
+  clearTimeout(pendingQuizSaveTimer);
+  pendingQuizSaveTimer = setTimeout(() => {
+    pendingQuizSaveTimer = 0;
+    saveProgress();
+  }, 180);
+}
+
+function flushPendingQuizProgressSave() {
+  if (!pendingQuizSaveTimer) return;
+  clearTimeout(pendingQuizSaveTimer);
+  pendingQuizSaveTimer = 0;
+  saveProgress();
 }
 
 function renderCloudUi() {
@@ -876,7 +952,7 @@ function populateFilters() {
 
 function applyFilters() {
   const openState = captureOpenModuleState();
-  const query = searchInput.value.trim().toLowerCase();
+  const query = normalizeSearchQuery(searchInput.value);
   const selectedYear = yearFilter.value;
   const selectedModuleId = moduleFilter.value;
 
@@ -884,9 +960,10 @@ function applyFilters() {
     if (selectedYear && module.yearFolder !== selectedYear) return false;
     if (selectedModuleId && module.id !== selectedModuleId) return false;
     if (!query) return true;
-    return buildModuleHaystack(module).includes(query);
+    return getModuleHaystack(module).includes(query);
   });
 
+  syncUrlFromFilters();
   renderModules();
   restoreOpenModuleState(openState);
   if (state.currentModuleId) {
@@ -1059,6 +1136,33 @@ function buildModuleHaystack(module) {
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
+}
+
+function getModuleHaystack(module) {
+  if (!state.searchIndex.modules.has(module.id)) {
+    state.searchIndex.modules.set(module.id, buildModuleHaystack(module));
+  }
+  return state.searchIndex.modules.get(module.id);
+}
+
+function buildTopicHaystack(topic) {
+  return [
+    topic.name,
+    topic.section,
+    ...topic.quizzes.map((quiz) => quiz.title),
+    ...topic.videos.map((video) => video.title),
+    ...topic.articleLessons.map((lesson) => lesson.title),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function getTopicHaystack(topic) {
+  if (!state.searchIndex.topics.has(topic.id)) {
+    state.searchIndex.topics.set(topic.id, buildTopicHaystack(topic));
+  }
+  return state.searchIndex.topics.get(topic.id);
 }
 
 function renderMistakeList() {
@@ -1533,10 +1637,9 @@ function getRecommendationTopics({ coveredOnly = null, includeFuture = null } = 
 }
 
 function topicMatchesSearch(topic) {
-  const query = searchInput.value.trim().toLowerCase();
+  const query = normalizeSearchQuery(searchInput.value);
   if (!query) return true;
-  const haystack = [topic.name, topic.section, ...topic.quizzes.map((quiz) => quiz.title), ...topic.videos.map((video) => video.title), ...topic.articleLessons.map((lesson) => lesson.title)].join(" ").toLowerCase();
-  return haystack.includes(query);
+  return getTopicHaystack(topic).includes(query);
 }
 
 function getTopicState(topicId) {
@@ -2990,7 +3093,7 @@ function saveQuizAnswer(questionId, value, correct, extras = {}) {
   const previous = state.quizSession.answers[questionId] || {};
   state.quizSession.answers[questionId] = { ...previous, value, correct, ...extras };
   getQuizProgress(state.quizSession.quiz.jsonPath).answers = state.quizSession.answers;
-  saveProgress();
+  queueQuizProgressSave();
 }
 
 function moveQuiz(delta) {
