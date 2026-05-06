@@ -3015,6 +3015,112 @@ details[open] > .section-card-head::after {
   }
 }
 
+@media (min-width: 561px) and (max-width: 900px) {
+  .app-header-inner {
+    gap: 12px;
+    align-items: center;
+  }
+
+  .app-brand {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .app-nav {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0;
+  }
+
+  .app-nav-link {
+    min-height: 44px;
+    padding: 0 10px;
+    font-size: 0.74rem;
+  }
+
+  .app-actions {
+    width: auto;
+    justify-content: flex-end;
+  }
+
+  .theme-toggle {
+    min-height: 44px;
+    padding: 0 14px;
+    font-size: 0.74rem;
+  }
+
+  .page-shell {
+    padding: 20px;
+    gap: 20px;
+  }
+
+  .hero,
+  .module-view-hero {
+    padding: 24px 20px;
+  }
+
+  .hero h2,
+  .module-view-hero h2 {
+    font-size: 2.2rem;
+    line-height: 0.98;
+  }
+
+  .module-view-grid,
+  .study-layout {
+    gap: 14px;
+  }
+
+  .page-shell.is-module-view .study-sidebar,
+  .page-shell.is-module-view .study-action-grid,
+  .task-flow-selector-grid,
+  .task-flow-overview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .planner-card,
+  .study-panel,
+  .module-card {
+    padding: 20px;
+  }
+
+  .study-content {
+    padding: 16px;
+    min-height: 360px;
+  }
+
+  .section-card-head {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  .section-card-title {
+    font-size: 1.12rem;
+    line-height: 1.08;
+  }
+
+  .section-card-summary-meta,
+  .section-topic-meta,
+  .study-order-banner p:last-child {
+    font-size: 0.9rem;
+  }
+
+  .section-topic-row {
+    padding: 12px 14px;
+  }
+
+  .section-topic-actions,
+  .module-links,
+  .module-quick-actions,
+  .study-sidebar-meta {
+    gap: 8px;
+  }
+
+  .study-action-chip {
+    min-height: 48px;
+    padding: 10px 12px;
+    font-size: 0.9rem;
+  }
+}
+
 @media (min-width: 761px) {
   .task-flow-sticky {
     display: none;
