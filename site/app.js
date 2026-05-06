@@ -51,6 +51,7 @@ const state = {
 const { fetchJson, fetchStudyHtml } = createArchiveResourceLoader(state.resourceCache);
 let pendingFilterFrame = 0;
 let pendingQuizSaveTimer = 0;
+const VIDEO_PROGRESS_COMMIT_INTERVAL_SECONDS = 5;
 
 function isTypingTarget(target) {
   if (!(target instanceof HTMLElement)) return false;
@@ -532,6 +533,7 @@ function bindEvents() {
     flushPendingQuizProgressSave();
     quizDialog.close();
   });
+  quizDialog.addEventListener("close", flushPendingQuizProgressSave);
   prevQuizBtn.addEventListener("click", () => moveQuiz(-1));
   nextQuizBtn.addEventListener("click", () => moveQuiz(1));
 
@@ -575,6 +577,7 @@ function normalizeProgress() {
   state.progress.version ??= 3;
   state.progress.updatedAt ??= null;
   state.progress.topics ??= {};
+  state.progress.videos ??= {};
   state.progress.quizzes ??= {};
   state.progress.flashcards ??= {};
   state.progress.notes ??= {};
@@ -914,6 +917,15 @@ async function restoreLastStudy() {
     }
   }
 
+  if (lastStudy.type === "quiz" && lastStudy.quizPath) {
+    const topic = findTopicById(lastStudy.topicId);
+    const quiz = topic?.quizzes.find((item) => item.jsonPath === lastStudy.quizPath);
+    if (topic && quiz) {
+      await openQuiz(topic, quiz);
+      return;
+    }
+  }
+
   if (lastStudy.type === "html" && lastStudy.path) {
     await openStudyHtml({
       title: lastStudy.title,
@@ -1074,6 +1086,10 @@ function renderModuleView(module) {
   moduleViewActions.append(buttonPill("Back to all modules", leaveModuleView));
   moduleViewActions.append(buttonPill("Today from this module", () => openModulePriority(module)));
   moduleViewActions.append(buttonPill("Drill flashcards", () => startFlashcardSession("module", module.id)));
+  const moduleResumeRef = getModuleResumeStudyRef(module);
+  if (moduleResumeRef) {
+    moduleViewActions.append(buttonPill(getModuleResumeLabel(moduleResumeRef), () => reopenStudyResource(moduleResumeRef)));
+  }
 
   moduleViewStats.innerHTML = "";
   moduleViewStats.append(metric(`${visibleTopics.length} topics`));
@@ -1237,7 +1253,7 @@ function renderModules() {
     node.querySelector(".progress-fill").style.width = `${progress.score}%`;
 
     const links = node.querySelector(".module-links");
-    links.append(buttonPill("Open module", () => openModuleView(module)));
+    links.append(buttonPill("Open module", () => openModuleAndResume(module)));
     links.append(buttonPill("Today from this module", () => openModulePriority(module)));
     links.append(buttonPill("Drill flashcards", () => startFlashcardSession("module", module.id)));
 
@@ -1712,6 +1728,113 @@ function getTopicProgress(topic) {
   return { completed: total > 0 && done === total, score, done, total, quizBoost, noteBoost };
 }
 
+function formatPlaybackTime(seconds) {
+  const safeSeconds = Math.max(0, Math.floor(Number(seconds) || 0));
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const remainingSeconds = safeSeconds % 60;
+  if (hours > 0) return `${hours}:${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
+  return `${minutes}:${String(remainingSeconds).padStart(2, "0")}`;
+}
+
+function getVideoProgressKey(topicId, video) {
+  return [
+    topicId || "",
+    video?.videoPath || "",
+    video?.htmlPath || "",
+    video?.title || "",
+  ].join("::");
+}
+
+function getVideoProgress(topicId, video) {
+  const key = getVideoProgressKey(topicId, video);
+  state.progress.videos[key] ??= {
+    topicId: topicId || "",
+    videoPath: video?.videoPath || null,
+    htmlPath: video?.htmlPath || null,
+    title: video?.title || video?.displayTitle || "Video",
+    currentTime: 0,
+    duration: 0,
+    percent: 0,
+    completed: false,
+    updatedAt: null,
+  };
+  return state.progress.videos[key];
+}
+
+function saveVideoPlaybackProgress(topic, video, player, options = {}) {
+  if (!topic?.id || !video || !player) return null;
+  const checkpoint = getVideoProgress(topic.id, video);
+  const duration = Number.isFinite(player.duration) && player.duration > 0 ? player.duration : checkpoint.duration || 0;
+  const currentTime = Math.max(0, Number.isFinite(player.currentTime) ? player.currentTime : checkpoint.currentTime || 0);
+  const percent = duration > 0 ? Math.min(100, Math.round((currentTime / duration) * 100)) : checkpoint.percent || 0;
+
+  checkpoint.topicId = topic.id;
+  checkpoint.videoPath = video.videoPath || null;
+  checkpoint.htmlPath = video.htmlPath || null;
+  checkpoint.title = getVideoLabel(video);
+  checkpoint.currentTime = currentTime;
+  checkpoint.duration = duration;
+  checkpoint.percent = percent;
+  checkpoint.completed = options.completed === true || (duration > 0 && currentTime >= Math.max(0, duration - 2));
+  checkpoint.updatedAt = new Date().toISOString();
+
+  if (state.progress.lastStudy?.type === "video"
+    && state.progress.lastStudy.topicId === topic.id
+    && state.progress.lastStudy.videoPath === checkpoint.videoPath
+    && state.progress.lastStudy.htmlPath === checkpoint.htmlPath) {
+    state.progress.lastStudy.playbackSeconds = checkpoint.completed ? 0 : checkpoint.currentTime;
+    state.progress.lastStudy.duration = checkpoint.duration;
+    state.progress.lastStudy.progressLabel = checkpoint.completed
+      ? "Completed"
+      : `Resume at ${formatPlaybackTime(checkpoint.currentTime)}`;
+    state.progress.lastStudy.savedAt = checkpoint.updatedAt;
+  }
+
+  if (checkpoint.completed) {
+    getTopicState(topic.id).checks.videos = true;
+  }
+
+  saveProgress({ skipCloudSync: options.skipCloudSync ?? false });
+  updateResumeStudyButton();
+  return checkpoint;
+}
+
+function getModuleResumeStudyRef(module) {
+  const lastStudy = state.progress.lastStudy;
+  if (!module || !lastStudy?.topicId) return null;
+  const studyModule = findModuleByTopicId(lastStudy.topicId);
+  if (!studyModule || studyModule.id !== module.id) return null;
+  if (lastStudy.type === "video" || lastStudy.type === "quiz" || lastStudy.type === "html") return lastStudy;
+  return null;
+}
+
+function getModuleResumeLabel(ref) {
+  if (!ref?.type) return "";
+  if (ref.type === "video") {
+    const progressLabel = ref.progressLabel || (ref.playbackSeconds ? `Resume at ${formatPlaybackTime(ref.playbackSeconds)}` : "Resume video");
+    return `${progressLabel}: ${ref.title}`;
+  }
+  if (ref.type === "quiz") {
+    const questionLabel = Number.isFinite(ref.questionIndex) ? `Question ${ref.questionIndex + 1}` : "Resume quiz";
+    return `${questionLabel}: ${ref.title}`;
+  }
+  return `Resume: ${ref.title}`;
+}
+
+function openModuleAndResume(moduleOrId) {
+  const module = typeof moduleOrId === "string" ? findModuleById(moduleOrId) : moduleOrId;
+  if (!module) return;
+  openModuleView(module);
+  const resumeRef = getModuleResumeStudyRef(module);
+  if (!resumeRef) return;
+  window.setTimeout(() => {
+    const activeModule = state.currentModuleId ? findModuleById(state.currentModuleId) : null;
+    if (!activeModule || activeModule.id !== module.id) return;
+    reopenStudyResource(resumeRef);
+  }, 0);
+}
+
 function getModuleProgress(module) {
   const visibleTopics = module.topics.filter((topic) => topicMatchesSearch(topic));
   const progress = visibleTopics.map(getTopicProgress);
@@ -1722,7 +1845,16 @@ function getModuleProgress(module) {
 }
 
 function getQuizProgress(quizPath) {
-  state.progress.quizzes[quizPath] ??= { attempts: 0, bestScore: 0, completed: false, lastScore: 0, answers: {} };
+  state.progress.quizzes[quizPath] ??= {
+    attempts: 0,
+    bestScore: 0,
+    completed: false,
+    lastScore: 0,
+    answers: {},
+    inProgress: false,
+    questionIndex: 0,
+    updatedAt: null,
+  };
   return state.progress.quizzes[quizPath];
 }
 
@@ -2011,6 +2143,7 @@ async function openVideoStudy(topic, video, extraActions = []) {
   markTopicTouch(topic.id, "videos");
   const content = document.createElement("div");
   content.className = "study-view study-video";
+  const savedVideoProgress = getVideoProgress(topic.id, video);
   const { previousVideo, nextVideo } = getAdjacentTopicVideos(topic, video);
   const openNextVideo = () => {
     if (nextVideo) openVideoStudy(topic, nextVideo, buildTopicStudyActions(topic, `video:${getTopicVideoIndex(topic, nextVideo)}`));
@@ -2028,6 +2161,30 @@ async function openVideoStudy(topic, video, extraActions = []) {
     player.setAttribute("playsinline", "true");
     player.setAttribute("aria-label", `${getVideoLabel(video)} video player`);
     player.addEventListener("play", () => markTopicTouch(topic.id, "videos"));
+    let lastCommittedTime = savedVideoProgress.currentTime || 0;
+    let playbackRestored = false;
+    const maybeRestorePlaybackPosition = () => {
+      if (playbackRestored || savedVideoProgress.completed || !savedVideoProgress.currentTime) return;
+      if (!Number.isFinite(player.duration) || player.duration <= 0) return;
+      player.currentTime = Math.min(savedVideoProgress.currentTime, Math.max(0, player.duration - 1));
+      playbackRestored = true;
+    };
+    player.addEventListener("loadedmetadata", maybeRestorePlaybackPosition);
+    player.addEventListener("canplay", maybeRestorePlaybackPosition);
+    player.addEventListener("timeupdate", () => {
+      if (!Number.isFinite(player.currentTime)) return;
+      if (Math.abs(player.currentTime - lastCommittedTime) < VIDEO_PROGRESS_COMMIT_INTERVAL_SECONDS) return;
+      const checkpoint = saveVideoPlaybackProgress(topic, video, player, { skipCloudSync: true });
+      lastCommittedTime = checkpoint?.currentTime ?? player.currentTime;
+    });
+    player.addEventListener("pause", () => {
+      const checkpoint = saveVideoPlaybackProgress(topic, video, player);
+      lastCommittedTime = checkpoint?.currentTime ?? lastCommittedTime;
+    });
+    player.addEventListener("ended", () => {
+      const checkpoint = saveVideoPlaybackProgress(topic, video, player, { completed: true });
+      lastCommittedTime = checkpoint?.currentTime ?? lastCommittedTime;
+    });
     player.addEventListener("error", async () => {
       if (video.wistiaPath) {
         try {
@@ -2078,6 +2235,15 @@ async function openVideoStudy(topic, video, extraActions = []) {
     }
     playerShell.append(player);
     content.append(playerShell, commandBar);
+    const flushPlaybackPosition = () => {
+      const checkpoint = saveVideoPlaybackProgress(topic, video, player);
+      lastCommittedTime = checkpoint?.currentTime ?? lastCommittedTime;
+    };
+    window.addEventListener("pagehide", flushPlaybackPosition, { once: true });
+    content._cleanup = () => {
+      window.removeEventListener("pagehide", flushPlaybackPosition);
+      flushPlaybackPosition();
+    };
   }
   if (video.htmlPath) {
     const html = await fetchStudyHtml(video.htmlPath);
@@ -2103,15 +2269,36 @@ async function openVideoStudy(topic, video, extraActions = []) {
       topicId: topic.id,
       videoPath: video.videoPath || null,
       htmlPath: video.htmlPath || null,
+      playbackSeconds: savedVideoProgress.completed ? 0 : savedVideoProgress.currentTime || 0,
+      duration: savedVideoProgress.duration || 0,
+      progressLabel: savedVideoProgress.completed
+        ? "Completed"
+        : savedVideoProgress.currentTime
+          ? `Resume at ${formatPlaybackTime(savedVideoProgress.currentTime)}`
+          : "",
     },
     actions: [
       previousVideo ? { label: `Previous: ${getVideoLabel(previousVideo)}`, action: openPreviousVideo } : null,
       nextVideo ? { label: `Play next: ${getVideoLabel(nextVideo)}`, action: openNextVideo } : null,
+      {
+        label: savedVideoProgress.completed
+          ? "Completed"
+          : savedVideoProgress.currentTime
+            ? `Resume at ${formatPlaybackTime(savedVideoProgress.currentTime)}`
+            : "Start from beginning",
+        action: () => {
+          const player = content.querySelector("video");
+          if (!player) return;
+          player.currentTime = savedVideoProgress.completed ? 0 : Math.min(savedVideoProgress.currentTime || 0, Math.max(0, player.duration || savedVideoProgress.currentTime || 0));
+          player.focus();
+        },
+      },
       ...extraActions,
       { label: "Open raw video", href: archiveUrl(video.videoPath) },
       video.htmlPath ? { label: "Open raw notes", href: archiveUrl(video.htmlPath) } : null,
     ].filter((item) => item && (item.href || item.action)),
     content,
+    cleanup: () => content._cleanup?.(),
   });
 }
 
@@ -2280,6 +2467,7 @@ async function openExamPaperStudy(module, paper) {
 }
 
 function clearStudyWorkspace() {
+  state.studySession?.cleanup?.();
   state.studySession = null;
   const eyebrow = studyTitle.previousElementSibling;
   if (eyebrow && eyebrow.classList.contains("eyebrow")) {
@@ -2303,6 +2491,7 @@ function clearStudyWorkspace() {
 }
 
 function setStudySession(session) {
+  state.studySession?.cleanup?.();
   state.studySession = session;
   const eyebrow = studyTitle.previousElementSibling;
   if (eyebrow && eyebrow.classList.contains("eyebrow")) {
@@ -2461,6 +2650,12 @@ function reopenStudyResource(ref) {
     const topic = findTopicById(ref.topicId);
     const video = topic?.videos.find((item) => (item.videoPath || null) === ref.videoPath && (item.htmlPath || null) === ref.htmlPath);
     if (topic && video) openVideoStudy(topic, video, []);
+    return;
+  }
+  if (ref.type === "quiz") {
+    const topic = findTopicById(ref.topicId);
+    const quiz = topic?.quizzes.find((item) => item.jsonPath === ref.quizPath);
+    if (topic && quiz) openQuiz(topic, quiz);
     return;
   }
   if (ref.type === "paper") {
@@ -2799,14 +2994,30 @@ async function openQuiz(topic, quiz) {
   markTopicTouch(topic.id, "quizzes");
   const quizData = await fetchJson(quiz.jsonPath);
   const questions = (quizData.progressQuizQuestions || []).map(normalizeQuestion).filter(Boolean);
+  const quizProgress = getQuizProgress(quiz.jsonPath);
+  const maxIndex = Math.max(0, questions.length - 1);
   state.quizSession = {
     topic,
     quiz,
     questions,
-    index: 0,
-    answers: { ...(getQuizProgress(quiz.jsonPath).answers || {}) },
+    index: Math.min(Math.max(quizProgress.questionIndex || 0, 0), maxIndex),
+    answers: { ...(quizProgress.answers || {}) },
     finished: false,
   };
+  quizProgress.inProgress = true;
+  quizProgress.questionIndex = state.quizSession.index;
+  quizProgress.updatedAt = new Date().toISOString();
+  state.progress.lastStudy = {
+    type: "quiz",
+    topicId: topic.id,
+    quizPath: quiz.jsonPath,
+    title: getQuizLabel(topic, quiz),
+    meta: `${topic.name} | Question ${state.quizSession.index + 1} of ${questions.length}`,
+    questionIndex: state.quizSession.index,
+    savedAt: quizProgress.updatedAt,
+  };
+  saveProgress({ skipCloudSync: true });
+  updateResumeStudyButton();
   renderQuiz();
   quizDialog.showModal();
 }
@@ -3092,8 +3303,22 @@ function feedbackBadge(question, answerState) {
 function saveQuizAnswer(questionId, value, correct, extras = {}) {
   const previous = state.quizSession.answers[questionId] || {};
   state.quizSession.answers[questionId] = { ...previous, value, correct, ...extras };
-  getQuizProgress(state.quizSession.quiz.jsonPath).answers = state.quizSession.answers;
+  const progress = getQuizProgress(state.quizSession.quiz.jsonPath);
+  progress.answers = state.quizSession.answers;
+  progress.inProgress = true;
+  progress.questionIndex = state.quizSession.index;
+  progress.updatedAt = new Date().toISOString();
+  state.progress.lastStudy = {
+    type: "quiz",
+    topicId: state.quizSession.topic.id,
+    quizPath: state.quizSession.quiz.jsonPath,
+    title: getQuizLabel(state.quizSession.topic, state.quizSession.quiz),
+    meta: `${state.quizSession.topic.name} | Question ${state.quizSession.index + 1} of ${state.quizSession.questions.length}`,
+    questionIndex: state.quizSession.index,
+    savedAt: progress.updatedAt,
+  };
   queueQuizProgressSave();
+  updateResumeStudyButton();
 }
 
 function moveQuiz(delta) {
@@ -3107,6 +3332,21 @@ function moveQuiz(delta) {
   }
   if (delta > 0 && session.index === session.questions.length - 1) return finishQuiz();
   session.index = Math.max(0, Math.min(session.questions.length - 1, session.index + delta));
+  const progress = getQuizProgress(session.quiz.jsonPath);
+  progress.inProgress = true;
+  progress.questionIndex = session.index;
+  progress.updatedAt = new Date().toISOString();
+  state.progress.lastStudy = {
+    type: "quiz",
+    topicId: session.topic.id,
+    quizPath: session.quiz.jsonPath,
+    title: getQuizLabel(session.topic, session.quiz),
+    meta: `${session.topic.name} | Question ${session.index + 1} of ${session.questions.length}`,
+    questionIndex: session.index,
+    savedAt: progress.updatedAt,
+  };
+  queueQuizProgressSave();
+  updateResumeStudyButton();
   renderQuiz();
 }
 
@@ -3122,6 +3362,14 @@ function finishQuiz() {
   progress.bestScore = Math.max(progress.bestScore, score);
   progress.completed = score === 100 || graded.length === session.questions.length;
   progress.answers = session.answers;
+  progress.inProgress = false;
+  progress.questionIndex = 0;
+  progress.updatedAt = new Date().toISOString();
+  if (state.progress.lastStudy?.type === "quiz" && state.progress.lastStudy.quizPath === session.quiz.jsonPath) {
+    state.progress.lastStudy.meta = `${session.topic.name} | Attempt complete`;
+    state.progress.lastStudy.questionIndex = 0;
+    state.progress.lastStudy.savedAt = progress.updatedAt;
+  }
 
   const wrongItems = graded.filter((item) => !item.correct);
   const wrongByType = {};

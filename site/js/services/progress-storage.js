@@ -5,6 +5,7 @@ export function createEmptyProgress() {
     version: 3,
     updatedAt: null,
     topics: {},
+    videos: {},
     quizzes: {},
     flashcards: {},
     notes: {},
@@ -38,6 +39,7 @@ export function getProgressTimestamp(progress) {
 
 export function isProgressEmpty(progress) {
   return !Object.keys(progress?.topics || {}).length
+    && !Object.keys(progress?.videos || {}).length
     && !Object.keys(progress?.quizzes || {}).length
     && !Object.keys(progress?.flashcards || {}).length
     && !Object.keys(progress?.notes || {}).length
