@@ -2137,6 +2137,49 @@ function buildTopicStudyActions(topic, currentId) {
   return actions;
 }
 
+function getVideoSubtitleTracks(video) {
+  return Array.isArray(video?.subtitleTracks) ? video.subtitleTracks.filter((track) => track?.path) : [];
+}
+
+function srtToVtt(content) {
+  const normalized = String(content || "").replace(/\r+/g, "");
+  const body = normalized.replace(
+    /(\d{2}:\d{2}:\d{2}),(\d{3})\s+-->\s+(\d{2}:\d{2}:\d{2}),(\d{3})/g,
+    "$1.$2 --> $3.$4",
+  );
+  return `WEBVTT\n\n${body.trim()}\n`;
+}
+
+async function attachVideoSubtitleTracks(player, video) {
+  const cleanup = [];
+  const attachedTracks = [];
+  for (const trackInfo of getVideoSubtitleTracks(video)) {
+    let sourceUrl = archiveUrl(trackInfo.path);
+    if (!sourceUrl) continue;
+    if (trackInfo.format === "srt") {
+      const response = await fetch(sourceUrl);
+      if (!response.ok) throw new Error(`Subtitle request failed for ${trackInfo.path} (${response.status})`);
+      const blobUrl = URL.createObjectURL(new Blob([srtToVtt(await response.text())], { type: "text/vtt" }));
+      cleanup.push(() => URL.revokeObjectURL(blobUrl));
+      sourceUrl = blobUrl;
+    }
+    const track = document.createElement("track");
+    track.kind = trackInfo.kind || "subtitles";
+    track.label = trackInfo.label || "Subtitles";
+    track.srclang = trackInfo.srclang || "en";
+    track.src = sourceUrl;
+    if (trackInfo.isDefault) track.default = true;
+    player.append(track);
+    attachedTracks.push(trackInfo);
+  }
+  return {
+    attachedTracks,
+    cleanup: () => {
+      for (const release of cleanup) release();
+    },
+  };
+}
+
 async function openVideoStudy(topic, video, extraActions = []) {
   const module = findModuleByTopicId(topic.id);
   if (module) openModuleView(module);
@@ -2145,6 +2188,7 @@ async function openVideoStudy(topic, video, extraActions = []) {
   content.className = "study-view study-video";
   const savedVideoProgress = getVideoProgress(topic.id, video);
   const { previousVideo, nextVideo } = getAdjacentTopicVideos(topic, video);
+  const subtitleTracks = getVideoSubtitleTracks(video);
   const openNextVideo = () => {
     if (nextVideo) openVideoStudy(topic, nextVideo, buildTopicStudyActions(topic, `video:${getTopicVideoIndex(topic, nextVideo)}`));
   };
@@ -2161,6 +2205,7 @@ async function openVideoStudy(topic, video, extraActions = []) {
     player.setAttribute("playsinline", "true");
     player.setAttribute("aria-label", `${getVideoLabel(video)} video player`);
     player.addEventListener("play", () => markTopicTouch(topic.id, "videos"));
+    let subtitleCleanup = () => {};
     let lastCommittedTime = savedVideoProgress.currentTime || 0;
     let playbackRestored = false;
     const maybeRestorePlaybackPosition = () => {
@@ -2229,11 +2274,25 @@ async function openVideoStudy(topic, video, extraActions = []) {
       fallback.innerHTML = `<h4>Video Unavailable</h4><p style="margin-top:8px">The video file couldn't be loaded. It is likely not included in this offline archive export.</p>`;
       playerShell.replaceChildren(fallback);
     });
+    playerShell.append(player);
+    if (subtitleTracks.length) {
+      try {
+        const { attachedTracks, cleanup } = await attachVideoSubtitleTracks(player, video);
+        subtitleCleanup = cleanup;
+        if (attachedTracks.length) {
+          const subtitleMeta = document.createElement("p");
+          subtitleMeta.className = "result-meta";
+          subtitleMeta.textContent = `Subtitles available: ${attachedTracks.map((track) => `${(track.label || "Subtitles").trim()} (${String(track.format || "").toUpperCase()})`).join(" | ")}`;
+          playerShell.append(subtitleMeta);
+        }
+      } catch (error) {
+        console.warn("Subtitle track setup failed", error);
+      }
+    }
     const commandBar = buildVideoCommandBar(player, { nextVideo, onPlayNext: openNextVideo });
     if (previousVideo) {
       commandBar.querySelector(".video-command-group")?.prepend(buttonPill("Previous Video", openPreviousVideo));
     }
-    playerShell.append(player);
     content.append(playerShell, commandBar);
     const flushPlaybackPosition = () => {
       const checkpoint = saveVideoPlaybackProgress(topic, video, player);
@@ -2243,6 +2302,7 @@ async function openVideoStudy(topic, video, extraActions = []) {
     content._cleanup = () => {
       window.removeEventListener("pagehide", flushPlaybackPosition);
       flushPlaybackPosition();
+      subtitleCleanup();
     };
   }
   if (video.htmlPath) {
@@ -2295,6 +2355,10 @@ async function openVideoStudy(topic, video, extraActions = []) {
       },
       ...extraActions,
       { label: "Open raw video", href: archiveUrl(video.videoPath) },
+      ...subtitleTracks.map((track) => ({
+        label: `Open subtitles (${String(track.format || "").toUpperCase()})`,
+        href: archiveUrl(track.path),
+      })),
       video.htmlPath ? { label: "Open raw notes", href: archiveUrl(video.htmlPath) } : null,
     ].filter((item) => item && (item.href || item.action)),
     content,

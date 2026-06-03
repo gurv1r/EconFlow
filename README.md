@@ -133,6 +133,7 @@ The builder currently extracts:
 - modules
 - topics
 - videos
+- video subtitle tracks when `.vtt` or `.srt` files exist beside a lesson video
 - articles
 - quizzes
 - definitions
@@ -233,6 +234,43 @@ Catalog paths remain stable:
 - `archive/UpLearn Economics/...`
 
 That lets one generated catalog work in both environments.
+
+## Video Subtitles
+
+EconFlow now exposes lesson subtitle sidecars directly from each video lesson folder.
+
+Supported sidecar formats:
+
+- `*.vtt`
+- `*.srt`
+
+Current behavior:
+
+- `build_uplearn_site.py` adds `subtitleTracks` to each video entry in `site/catalog.json`
+- `site/app.js` attaches those tracks to the HTML5 video player
+- `.vtt` files are used directly
+- `.srt` files are converted to WebVTT in the browser when needed
+
+If you want machine-generated subtitles for lessons that do not already have them, use the Google Cloud Speech-to-Text V2 helper:
+
+```bash
+python scripts/generate_video_captions.py --limit 10
+```
+
+Requirements:
+
+- Application Default Credentials or other working Google Cloud auth
+- Python packages `google-cloud-speech` and `google-cloud-storage`
+- `ffmpeg` available on `PATH`
+
+The helper:
+
+- extracts lesson audio to FLAC locally for better transcription input
+- uploads that staging audio to GCS
+- calls Speech-to-Text V2 `BatchRecognize`
+- requests both `.vtt` and `.srt` outputs
+- writes hosted caption files into the same GCS archive path used by GitHub Pages
+- downloads the generated caption files back into the local lesson folder as `captions.auto.vtt` and `captions.auto.srt`
 
 ## GCS Commands
 

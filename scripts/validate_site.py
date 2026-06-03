@@ -317,6 +317,17 @@ def validate_catalog(catalog: dict) -> None:
             for video in topic.get("videos", []):
                 if video.get("videoPath"):
                     ensure_path(video.get("videoPath"), f"video {video.get('title')}")
+                subtitle_tracks = video.get("subtitleTracks", [])
+                if subtitle_tracks and not isinstance(subtitle_tracks, list):
+                    fail(f"Video {video.get('title')} subtitleTracks must be a list")
+                for track in subtitle_tracks:
+                    ensure_path(track.get("path"), f"video {video.get('title')} subtitle")
+                    if track.get("format") not in {"vtt", "srt"}:
+                        fail(f"Video {video.get('title')} has unsupported subtitle format: {track.get('format')}")
+                    if not track.get("label"):
+                        fail(f"Video {video.get('title')} subtitle track is missing label")
+                    if not track.get("srclang"):
+                        fail(f"Video {video.get('title')} subtitle track is missing srclang")
                 if video.get("htmlPath"):
                     ensure_path(video.get("htmlPath"), f"video {video.get('title')} html")
                 if video.get("jsonPath"):

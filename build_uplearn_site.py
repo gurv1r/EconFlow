@@ -37,6 +37,38 @@ def first_or_none(paths):
     return None
 
 
+def detect_subtitle_language(path: Path) -> str:
+    name = path.stem.lower()
+    for token in re.split(r"[^a-z0-9]+", name):
+        if token in {"en", "eng", "gb", "uk"}:
+            return "en"
+    return "en"
+
+
+def find_video_subtitle_tracks(lesson_dir: Path) -> list[dict]:
+    tracks = []
+    for path in sorted(p for p in lesson_dir.iterdir() if p.is_file() and p.suffix.lower() in {".vtt", ".srt"}):
+        srclang = detect_subtitle_language(path)
+        tracks.append(
+            {
+                "path": rel(path),
+                "format": path.suffix.lower().lstrip("."),
+                "label": "English",
+                "srclang": srclang,
+                "kind": "subtitles",
+                "isDefault": not tracks and path.suffix.lower() == ".vtt",
+            }
+        )
+    if tracks and not any(track["isDefault"] for track in tracks):
+        for track in tracks:
+            if track["format"] == "vtt":
+                track["isDefault"] = True
+                break
+        else:
+            tracks[0]["isDefault"] = True
+    return tracks
+
+
 def strip_video_dir_prefix(value: str) -> str:
     return re.sub(r"^(Video Lesson|Exam How-To)\s*-\s*", "", value or "").strip()
 
@@ -288,6 +320,7 @@ def build_catalog():
                         for lesson_dir in sorted(p for p in video_root.iterdir() if p.is_dir()):
                             metadata = resolve_video_metadata(video_order_lookup, subsection.get("subsectionNumber"), lesson_dir)
                             video_path = first_or_none(lesson_dir.glob("video.*"))
+                            subtitle_tracks = find_video_subtitle_tracks(lesson_dir)
                             video_entries.append(
                                 {
                                     "title": metadata["title"],
@@ -296,6 +329,7 @@ def build_catalog():
                                     "kind": metadata["kind"],
                                     "folder": rel(lesson_dir),
                                     "videoPath": rel(video_path) if video_path else None,
+                                    "subtitleTracks": subtitle_tracks,
                                     "htmlPath": rel(lesson_dir / "index.html") if (lesson_dir / "index.html").exists() else None,
                                     "jsonPath": rel(lesson_dir / "lesson.json") if (lesson_dir / "lesson.json").exists() else None,
                                     "wistiaPath": rel(lesson_dir / "wistia.json") if (lesson_dir / "wistia.json").exists() else None,
